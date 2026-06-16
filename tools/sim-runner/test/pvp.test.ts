@@ -89,8 +89,8 @@ function pvpCrafted(
   return { ...base, map, players };
 }
 
-describe('PvP rescue isolation', () => {
-  it('a different-team player cannot rescue: trapped player times out', () => {
+describe('PvP enemy contact', () => {
+  it('an enemy-team toucher instantly breaks the shell (KO well before timeout)', () => {
     let st = pvpCrafted(({ map, players }) => {
       players[1]!.trapped = true; // team 1 trapped at (1,1)
       players[1]!.trappedTicks = TRAPPED_TICKS;
@@ -102,24 +102,50 @@ describe('PvP rescue isolation', () => {
       map[idx(2, 1)] = TileKind.EMPTY;
     });
     const LEFT: InputFrame = { dir: Direction.LEFT, action: 0 };
-    for (let t = 0; t < TRAPPED_TICKS - 1; t++) {
+    let koAt = -1;
+    for (let t = 0; t < TRAPPED_TICKS - 1 && koAt < 0; t++) {
       st = tick(st, [LEFT, IDLE]);
-      expect(st.players[1]!.trapped).toBe(true); // never rescued by the opposing team
+      if (!st.players[1]!.alive) koAt = st.tick;
     }
-    st = tick(st, [LEFT, IDLE]);
+    expect(koAt).toBeGreaterThan(0);
+    expect(koAt).toBeLessThan(TRAPPED_TICKS); // killed on contact, not by timeout
     expect(st.players[1]!.trapped).toBe(false);
-    expect(st.players[1]!.alive).toBe(false); // timed out → eliminated
+    expect(st.players[1]!.alive).toBe(false); // shell broken by the enemy
+  });
+});
+
+describe('PvP rescue priority', () => {
+  it('same-team rescue still works and beats a co-located enemy killer', () => {
+    // P0 (team 0, trapped) at (1,1); P1 (team 0 ally rescuer) and
+    // P2 (team 1 enemy killer) both staged inside contact range the same tick.
+    const base = createInitialState(777, fp, 3, { pvp: true, teams: [0, 0, 1] });
+    const map = new Uint8Array(base.map);
+    const players = base.players.map(clonePlayer);
+    players[0]!.trapped = true;
+    players[0]!.trappedTicks = TRAPPED_TICKS;
+    players[0]!.posX = 1 * MILLITILE;
+    players[0]!.posY = 1 * MILLITILE;
+    players[1]!.posX = 1 * MILLITILE; // ally rescuer co-located
+    players[1]!.posY = 1 * MILLITILE;
+    players[2]!.posX = 1 * MILLITILE; // enemy killer co-located
+    players[2]!.posY = 1 * MILLITILE;
+    let st: SimState = { ...base, map, players };
+
+    st = tick(st, [IDLE, IDLE, IDLE]);
+    // Rescue wins the tie: freed, not eliminated.
+    expect(st.players[0]!.trapped).toBe(false);
+    expect(st.players[0]!.alive).toBe(true);
   });
 });
 
 describe('PvP win condition (1v1)', () => {
   it('OVER once only one team has an alive player', () => {
     let st = pvpCrafted(({ players }) => {
+      // players[1] (team 1) trapped at its own spawn corner; players[0]
+      // (team 0) stays at the opposite spawn corner — far out of contact
+      // range, so no rescue AND no enemy KO: it must time out.
       players[1]!.trapped = true;
       players[1]!.trappedTicks = TRAPPED_TICKS;
-      players[1]!.posX = 1 * MILLITILE;
-      players[1]!.posY = 1 * MILLITILE;
-      // players[0] (team 0) parked at its spawn corner, no rescue possible.
     });
     for (let t = 0; t < TRAPPED_TICKS - 1; t++) {
       st = tick(st, [IDLE, IDLE]);

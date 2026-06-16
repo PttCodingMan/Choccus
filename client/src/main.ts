@@ -12,7 +12,7 @@
  * Each match uses a FRESH random seed (initial load and every reset), so item
  * drops and bot play vary from match to match. The layout still depends on the
  * chosen MapKind: authored kinds (e.g. 'pirate') look the same every match,
- * while rolled kinds ('classic' / 'open') also vary with the seed. The R key
+ * while the rolled kind ('classic') also varies with the seed. The R key
  * starts a NEW random match rather than replaying the same one.
  *
  * Feel params (hotseat only): the ⚙ FeelPanel adjusts move speed / corner
@@ -21,8 +21,10 @@
  * never shows the panel — its params come from MatchStart.
  */
 import { TICK_MS } from '../../shared/constants';
+import { GamePhase } from '../../shared/types';
 import { BotController } from './ai/BotController';
-import { botSeed, parseDifficulty, tuningFor } from './ai/BotConfig';
+import { type BotTuning, botSeed, parseDifficulty, tuningFor } from './ai/BotConfig';
+import { resolveStrategy, strategyForSlot } from './ai/Strategies';
 import { matchSound } from './audio/MatchSound';
 import { sfx } from './audio/Sfx';
 import { type FeelParams, makeFeelParams } from './config/FeelParams';
@@ -48,20 +50,58 @@ const MAX_FRAME_MS = 250;
 
 async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   // Bot count: default 1 when ?bots is absent; clamped to 0..3 otherwise.
+  // Mutable so the bot-count picker can change it; reset() then rebuilds the
+  // match with 1 + bots players. numPlayers is computed at each use site.
   const botsRaw = Number(params.get('bots'));
-  const bots = !params.has('bots')
+  let bots = !params.has('bots')
     ? 1
     : Number.isNaN(botsRaw)
       ? 1
       : Math.max(0, Math.min(3, Math.trunc(botsRaw)));
   const difficulty = parseDifficulty(params.get('difficulty'));
-  const numPlayers = 1 + bots;
 
-  // Map kind: ?map=classic|open|pirate (case-insensitive); anything else → classic.
+  // Named-strategy mode (?strategy=). Independent of difficulty: when a strategy
+  // is given, every bot uses the strategy tuning and difficulty is ignored;
+  // when absent, bots fall back to the difficulty tuning. All assignment is
+  // fully deterministic (no Math.random) — safe for lockstep.
+  //   ?strategy=aggressor|turtle|gambler|chaosv → all bots use that archetype.
+  //   ?strategy=mix (or random)                 → each bot cycles a distinct
+  //                                               archetype by its bot index.
+  const strategyRaw = (params.get('strategy') ?? '').toLowerCase().trim();
+  const named = strategyRaw === '' ? undefined : resolveStrategy(strategyRaw);
+  const isMix = strategyRaw === 'mix' || strategyRaw === 'random';
+
+  // Resolve the bot brain tuning for an AI slot (1..bots). bot index = slot - 1.
+  const tuningForSlot = (slot: number): BotTuning => {
+    if (isMix) return strategyForSlot(slot - 1).tuning;
+    if (named !== undefined) return named.tuning;
+    return tuningFor(difficulty);
+  };
+
+  // Render-layer-only slot→label table (index = player slot). slot 0 = human.
+  // NEVER goes into SimState/stateHash; consumed solely by the HUD. Rebuilt on
+  // every reset() so HUD labels track the current bot count.
+  const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+  const buildSlotLabels = (): (string | undefined)[] => {
+    const labels: (string | undefined)[] = ['YOU'];
+    for (let slot = 1; slot <= bots; slot++) {
+      if (isMix) labels.push(strategyForSlot(slot - 1).name);
+      else if (named !== undefined) labels.push(named.name);
+      else labels.push(cap(difficulty));
+    }
+    return labels;
+  };
+
+  // Render-layer-only HUD hint text. Rebuilt on every reset() so the bot count
+  // shown tracks the current picker selection.
+  const buildHint = (): string =>
+    bots > 0
+      ? `Solo +${bots} AI (${difficulty}) — Arrows move · Space drops chocolate`
+      : 'Solo — Arrows move · Space drops chocolate';
+
+  // Map kind: ?map=classic|pirate (case-insensitive); anything else → classic.
   const parseMapKind = (raw: string | null): MapKind => {
     switch (raw?.toLowerCase()) {
-      case 'open':
-        return 'open';
       case 'pirate':
         return 'pirate';
       default:
@@ -77,7 +117,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   let seed = randomSeed();
   // team = slot (default): the human is team 0 vs each bot on its own team;
   // last survivor wins.
-  let cur: SimState = createInitialState(seed, feel, numPlayers, {
+  let cur: SimState = createInitialState(seed, feel, 1 + bots, {
     pvp: true,
     map: mapKind,
   });
@@ -88,7 +128,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const buildBots = (): BotController[] => {
     const arr: BotController[] = [];
     for (let slot = 1; slot <= bots; slot++) {
-      arr.push(new BotController(botSeed(seed, slot), tuningFor(difficulty), slot));
+      arr.push(new BotController(botSeed(seed, slot), tuningForSlot(slot), slot));
     }
     return arr;
   };
@@ -98,12 +138,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   keyboard.attach(window);
 
   const renderer = await Renderer.create();
-  renderer.setHudHint(
-    bots > 0
-      ? `Solo +${bots} AI (${difficulty}) — Arrows move · Space drops chocolate`
-      : 'Solo — Arrows move · Space drops chocolate',
-    true,
-  );
+  renderer.setSlotLabels(buildSlotLabels());
+  renderer.setHudHint(buildHint(), true);
   const mount = document.getElementById('app');
   if (!mount) {
     throw new Error('#app mount point missing');
@@ -114,17 +150,35 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   let last: number | undefined;
   let audioUnlocked = false;
 
-  /** Start a NEW random match (R-reset / feel apply / map change). */
+  // Auto-restart on game over (pure client orchestration — no sim effect). When
+  // the match ends we schedule a single reset() ~2.5s later so the player need
+  // not press R. `restartScheduled` guards against firing more than once per
+  // match; `restartTimer` lets reset() cancel a still-pending auto-restart
+  // (e.g. when R is pressed during the window).
+  let restartScheduled = false;
+  let restartTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Start a NEW random match (R-reset / feel apply / map change / auto-restart). */
   const reset = (): void => {
+    // Cancel any pending auto-restart and clear the per-match guard so the next
+    // match can auto-restart when it ends.
+    if (restartTimer !== undefined) {
+      clearTimeout(restartTimer);
+      restartTimer = undefined;
+    }
+    restartScheduled = false;
     // Re-roll first so buildBots() and createInitialState() see the new seed.
     seed = randomSeed();
     botControllers = buildBots();
     // team = slot (default): human team 0 vs each bot on its own team.
-    cur = createInitialState(seed, feel, numPlayers, {
+    cur = createInitialState(seed, feel, 1 + bots, {
       pvp: true,
       map: mapKind,
     });
     prev = cur;
+    // Render-layer only: refresh HUD labels/hint so a changed bot count shows.
+    renderer.setSlotLabels(buildSlotLabels());
+    renderer.setHudHint(buildHint(), true);
     acc = 0;
   };
 
@@ -168,7 +222,6 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     'font:13px system-ui,sans-serif;cursor:pointer;';
   const mapOptions: ReadonlyArray<readonly [MapKind, string]> = [
     ['classic', 'Classic'],
-    ['open', 'Open'],
     ['pirate', 'Pirate'],
   ];
   for (const [value, label] of mapOptions) {
@@ -183,6 +236,26 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     reset();
   });
   document.body.appendChild(mapPicker);
+
+  // Solo bot-count picker (second row, below the map picker; top-right stays the
+  // mute button). Changing it starts a new random match with 1 + N players.
+  const botPicker = document.createElement('select');
+  botPicker.style.cssText =
+    'position:fixed;top:44px;left:8px;z-index:900;padding:6px 12px;' +
+    'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
+    'font:13px system-ui,sans-serif;cursor:pointer;';
+  for (let n = 0; n <= 3; n++) {
+    const opt = document.createElement('option');
+    opt.value = String(n);
+    opt.textContent = n === 1 ? '1 Bot' : `${n} Bots`;
+    if (n === bots) opt.selected = true;
+    botPicker.appendChild(opt);
+  }
+  botPicker.addEventListener('change', () => {
+    bots = Math.max(0, Math.min(3, Math.trunc(Number(botPicker.value))));
+    reset();
+  });
+  document.body.appendChild(botPicker);
 
   // "Click anywhere to enable sound" hint.
   const soundHint = document.createElement('div');
@@ -217,6 +290,14 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       cur = tick(cur, inputs);
       matchSound.tick(prevTick, cur);
       acc -= TICK_MS;
+    }
+
+    // Auto-restart: once the match is OVER (last team standing), schedule a
+    // fresh random match after ~2.5s. Fires once per match; reset() clears the
+    // guard so the next match auto-restarts too.
+    if (cur.phase === GamePhase.OVER && !restartScheduled) {
+      restartScheduled = true;
+      restartTimer = setTimeout(reset, 2500);
     }
 
     renderer.render(prev, cur, acc / TICK_MS);

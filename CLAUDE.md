@@ -70,7 +70,7 @@
 
 ### 玩家初始值與上限
 
-- 生命 **1 條**（被融流炸到 → 糖殼困住；**同隊**隊友碰=解救、超時=破殼淘汰。敵隊玩家碰到困住者無作用，只有超時會淘汰。重生模式才會重生）
+- 生命 **1 條**（被融流炸到 → 糖殼困住；**同隊**隊友碰=解救（救援優先）、**敵隊**玩家碰到困住者 → 立即破殼淘汰、無人碰且超時也會破殼淘汰。重生模式才會重生）
 - 火力 2（上限 6）
 - 炮數 1（上限 5）
 - 速度加成 0（每顆 +0.4，上限 +2.0）
@@ -104,14 +104,15 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | **Aggressor（主動）** | 3 | 0.95 | 4 | 1.8 | 幾乎每個機會都放彈、反應銳利、逃生預算短：以安全餘裕換 tempo，持續施壓 | 綜合最強 |
 | **亂V/ChaosV（亂V）** | 3 | 0.9 | 5 | 1.8 | 敵人 ≤4 格時放短 V／之字連環彈（`vChainBombs:3`，配速一顆一引爆絕不自爆，每顆都過完整逃生驗證），封堵逃生道困住逃竄者 | 第二（最穩定） |
-| **Turtle（龜縮）** | 3 | 0.15 | 6 | 0.3 | 極少放彈、要求最長逃生路：靠拖垮對手而非擊殺 | classic 強／open 崩 |
-| **Gambler（賭徒）** | 12 | 0.9 | 4 | 1.3 | 反應遲鈍、常失誤、25% 機率盲放無逃生路（`recklessBombChance:0.25`）：高變異 boom-or-bust | open 強／classic 崩 |
+| **Turtle（龜縮）** | 3 | 0.15 | 6 | 0.3 | 極少放彈、要求最長逃生路：靠拖垮對手而非擊殺 | 封閉圖強／開放圖弱 |
+| **Gambler（賭徒）** | 12 | 0.9 | 4 | 1.3 | 反應遲鈍、常失誤、25% 機率盲放無逃生路（`recklessBombChance:0.25`）：高變異 boom-or-bust | 開放圖強／封閉圖弱 |
 
-> 強度依 5 支自打 tournament（classic + open 各 240 場）。原 **Hunter**（平衡 all-rounder，兩圖皆偏弱）已移除（重構前的舊 AI 已棄用、不保留）。
+> 強度依 5 支自打 tournament（classic + pirate 各 240 場）。原 **Hunter**（平衡 all-rounder，兩圖皆偏弱）已移除（重構前的舊 AI 已棄用、不保留）。
 
 #### AI 版本制
 
 當前 dypm 式 bot 定為 **AI v1**（`client/src/ai/version.ts` 的 `AI_VERSION`）。日後改 AI 邏輯就升版（v2、v3…），不再保留「新舊兩份 code」並行。
 
-- 每個里程碑版本凍結一份不可變快照於 `tools/sim-runner/baselines/v<N>/`（自足、只 import 穩定 sim 型別、**絕不** import 活的 AI；附 `v<N>-golden.json` hash 鎖 + `v<N>-frozen.test.ts`）。v1 已凍結於 `baselines/v1/`，**勿動**。
-- 改完活的 AI 後跑 `npm run version-bench`（在 `tools/sim-runner/`）：活 bot vs 凍結前一版，4-bot FFA、兩張地圖、同名 preset 對打，輸出 ΔWinRate / ΔAvgRank → 一眼看出新版有沒有變強（沿用先前確認「重構 +15～26% 勝率」的同套方法）。
+- 每個里程碑版本凍結一份 **AI 程式碼快照** 於 `tools/sim-runner/baselines/v<N>/`（凍結的是 bot 決策 code，如 `V<N>BotController.ts` / `v<N>Strategies.ts`；**絕不** import 活的 AI）。要永久留存的就是這份 AI code 快照，v1→v2→… 演進即可。v1 已凍結於 `baselines/v1/`。
+- **不做逐 tick golden hash 鎖**：先前的 `v<N>-golden.json` / `v<N>-frozen.test.ts` 已移除。原因——baseline 為求簡單仍 import 活的 sim，任何刻意的 sim/機制改動都會讓逐幀指紋過期，分不清「故意改」與「意外壞」，雜訊大於價值。回歸保障改由 `determinism.test.ts`（決定性）＋ `version-bench`（強弱變化）負責。
+- 改完活的 AI 後跑 `npm run version-bench`（在 `tools/sim-runner/`）：活 bot vs 凍結前一版，4-bot FFA、兩張地圖（classic + pirate）、同名 preset 對打，輸出 ΔWinRate / ΔAvgRank → 一眼看出新版有沒有變強（沿用先前確認「重構 +15～26% 勝率」的同套方法）。

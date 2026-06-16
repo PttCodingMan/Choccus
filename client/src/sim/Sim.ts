@@ -174,6 +174,13 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
   bombs = det.bombs;
   prng = det.prng;
   explosions.push(...det.cells);
+  // A second (new) detonation destroys items already lying on the floor; the
+  // items that just dropped THIS tick are not touched by this tick's own
+  // explosion (the first bomb reveals the item, a later bomb burns it). Filter
+  // existing items against this tick's new cells BEFORE pushing det.items.
+  if (det.cells.length > 0 && items.length > 0) {
+    items = items.filter((it) => !explosionAt(det.cells, it.tileX, it.tileY));
+  }
   items.push(...det.items);
   for (const slot of det.detonatedOwners) {
     const owner = players.find((p) => p.slot === slot);

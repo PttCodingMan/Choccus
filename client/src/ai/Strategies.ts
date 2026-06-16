@@ -83,3 +83,30 @@ export const STRATEGIES: ReadonlyArray<{
     }),
   }),
 ]);
+
+/**
+ * Resolve a named strategy by key (case-insensitive, whitespace-trimmed) to its
+ * tuning + display name. Returns undefined for any key that isn't a known
+ * archetype (callers fall back to difficulty tuning).
+ */
+export function resolveStrategy(
+  key: string,
+): { tuning: BotTuning; name: string } | undefined {
+  const k = key.toLowerCase().trim();
+  const s = STRATEGIES.find((e) => e.key === k);
+  return s === undefined ? undefined : { tuning: s.tuning, name: s.name };
+}
+
+/**
+ * Deterministically pick a strategy for a given index (mix mode): cycles
+ * through STRATEGIES by `index mod STRATEGIES.length`. Fully deterministic —
+ * no Math.random / Date.now — so it's safe for lockstep / online backfill.
+ */
+export function strategyForSlot(index: number): { tuning: BotTuning; name: string } {
+  const n = STRATEGIES.length;
+  // Normalize to a non-negative index even for negative inputs.
+  const i = ((Math.trunc(index) % n) + n) % n;
+  // STRATEGIES is a non-empty frozen literal, so this index is always in range.
+  const s = STRATEGIES[i] as { key: string; name: string; tuning: BotTuning };
+  return { tuning: s.tuning, name: s.name };
+}

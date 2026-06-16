@@ -29,14 +29,6 @@ export const TILE_PX = 44;
 
 /** Soft-brick generation rate over eligible tiles (spec: 72%). */
 export const SOFT_BRICK_RATE = 0.72;
-/**
- * Open-map soft density is center-weighted: probability decreases linearly with
- * Chebyshev distance from the map center, from OPEN_SOFT_CENTER at the center
- * down to OPEN_SOFT_EDGE at the interior rim. This keeps the contested center
- * dense and the outskirts open.
- */
-export const OPEN_SOFT_CENTER = 0.6;
-export const OPEN_SOFT_EDGE = 0.15;
 /** Tiles kept clear around each spawn corner (spec: 3). */
 export const SPAWN_CLEAR_TILES = 3;
 

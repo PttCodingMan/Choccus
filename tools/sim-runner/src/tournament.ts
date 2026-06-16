@@ -50,8 +50,8 @@ const MAX_TICKS = 3600;
 /** Base match seed; per-match seed = (BASE + globalMatchIndex) >>> 0. */
 const BASE = 0x12345678;
 /** Map layouts the tournament evaluates, each printed as its own table. */
-type MapKind = 'classic' | 'open';
-const MAPS: readonly MapKind[] = ['classic', 'open'];
+type MapKind = 'classic' | 'pirate';
+const MAPS: readonly MapKind[] = ['classic', 'pirate'];
 
 /**
  * All permutations of [0..n-1] in lexicographic order (deterministic, no RNG).

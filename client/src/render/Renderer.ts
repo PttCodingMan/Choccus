@@ -89,6 +89,15 @@ export class Renderer {
   }
 
   /**
+   * Supply render-layer-only per-slot labels (e.g. strategy / difficulty
+   * names) shown after each HUD player row. Index = player slot; undefined
+   * entries render no tag. Labels never touch the sim state.
+   */
+  setSlotLabels(labels: ReadonlyArray<string | undefined>): void {
+    this.hud.setSlotLabels(labels);
+  }
+
+  /**
    * Draw one frame: `alpha` ∈ [0, 1) is the fraction of the current tick
    * elapsed; entity positions blend between `prev` and `next`.
    */

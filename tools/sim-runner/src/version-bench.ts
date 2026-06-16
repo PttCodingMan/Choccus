@@ -63,8 +63,8 @@ const MAX_TICKS = 3600;
 /** Base match seed; per-match seed = (BASE + globalMatchIndex) >>> 0. */
 const BASE = 0x12345678;
 /** Map layouts the bench evaluates, each printed as its own table. */
-type MapKind = 'classic' | 'open';
-const MAPS: readonly MapKind[] = ['classic', 'open'];
+type MapKind = 'classic' | 'pirate';
+const MAPS: readonly MapKind[] = ['classic', 'pirate'];
 
 /** Live STRATEGIES tuning by key (numeric knobs the live bot consumes). */
 const LIVE_AGGRESSOR = STRATEGIES.find((s) => s.key === 'aggressor')!.tuning;

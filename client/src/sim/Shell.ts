@@ -14,7 +14,11 @@
  *   Teams default to the player's slot (team = slot), so in a solo run a human
  *   and the AI bots are all on different teams and never rescue each other;
  *   explicit teams (opts.teams) put allies together.
- * - timeout → shell breaks, player eliminated (alive = false).
+ * - a non-trapped, alive enemy-team player touching the shell (within ~0.5
+ *   tile) instantly breaks it → the trapped player is eliminated. Rescue takes
+ *   priority: if a same-team rescuer is also in reach this tick, the trapped
+ *   player is freed instead of being killed.
+ * - timeout (no one touches) → shell breaks, player eliminated (alive = false).
  */
 import { MILLITILE, TRAPPED_TICKS } from '../../../shared/constants';
 import { type PlayerState, tileOf } from './Player';
@@ -52,19 +56,34 @@ export function breakShell(player: PlayerState): void {
 }
 
 /**
- * Per-tick shell pass, in player-array order: (a) rescue — any alive,
- * non-trapped teammate within RESCUE_DIST_MT clears the trap; then (b) age
- * the remaining shells, breaking (eliminating) at 0. MUTATES the clones.
+ * Per-tick shell pass, in player-array order: (a) contact resolution — for
+ * each trapped player, a same-team toucher rescues (trap cleared, rescue wins
+ * ties), otherwise an enemy-team toucher instantly breaks the shell
+ * (eliminated); then (b) age the remaining shells, breaking (eliminating) at 0.
+ * MUTATES the clones.
  */
 export function stepShells(players: PlayerState[]): void {
   for (const p of players) {
     if (!p.alive || !p.trapped) continue;
+    // PHASE A1 — same-team rescue (priority over enemy KO).
+    let rescued = false;
     for (const q of players) {
       if (q === p || !q.alive || q.trapped) continue;
       if (q.team !== p.team) continue;
       if (withinDistMt(p.posX, p.posY, q.posX, q.posY, RESCUE_DIST_MT)) {
         p.trapped = false;
         p.trappedTicks = 0;
+        rescued = true;
+        break;
+      }
+    }
+    if (rescued) continue;
+    // PHASE A2 — enemy-team contact: instant shell break (elimination).
+    for (const q of players) {
+      if (q === p || !q.alive || q.trapped) continue;
+      if (q.team === p.team) continue;
+      if (withinDistMt(p.posX, p.posY, q.posX, q.posY, RESCUE_DIST_MT)) {
+        breakShell(p);
         break;
       }
     }

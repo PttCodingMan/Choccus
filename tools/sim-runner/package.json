@@ -9,7 +9,6 @@
     "tournament": "tsx src/tournament.ts",
     "gen-fixtures": "tsx src/gen-fixtures.ts",
     "update-golden": "tsx src/update-golden.ts",
-    "update-v1-golden": "tsx baselines/v1/gen-v1-golden.ts",
     "version-bench": "tsx src/version-bench.ts"
   },
   "devDependencies": {

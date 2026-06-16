@@ -75,6 +75,11 @@ export class HudRenderer {
   private readonly rows: PlayerRow[] = [];
   /** Append "(R to restart)" to end-of-match banners (hotseat only). */
   private restartHint = true;
+  /**
+   * Render-only per-slot labels (strategy / difficulty / "YOU"); index = slot.
+   * Purely cosmetic — NEVER read from or written to SimState / stateHash.
+   */
+  private slotLabels: ReadonlyArray<string | undefined> = [];
 
   constructor(hintText: string = HOTSEAT_HINT) {
     // Dark chocolate HUD background
@@ -106,6 +111,15 @@ export class HudRenderer {
     this.restartHint = restartHint;
   }
 
+  /**
+   * Set the per-slot HUD labels (index = player slot). Cosmetic only — these
+   * are appended to each player row (e.g. "[Aggressor]" / "[YOU]") and never
+   * influence simulation state.
+   */
+  setSlotLabels(labels: ReadonlyArray<string | undefined>): void {
+    this.slotLabels = labels;
+  }
+
   update(next: SimState): void {
     this.banner.text = bannerText(next, this.restartHint);
 
@@ -129,7 +143,11 @@ export class HudRenderer {
         this.rows[i] = row;
       }
       // Update text style to reflect status
-      const { text, label, style } = playerLineInfo(pl.slot, pl);
+      const { text, label, style } = playerLineInfo(
+        pl.slot,
+        pl,
+        this.slotLabels[pl.slot],
+      );
       void label; // label embedded in text
       row.text.style = { ...style };
       row.text.text = text;
@@ -160,14 +178,17 @@ function playerLineInfo(
     activeBombs: number;
     speedBonusTenths: number;
   },
+  slotLabel?: string,
 ): { text: string; label: string; style: Partial<TextStyle> } {
   const label = `P${slot + 1}`;
   const spd = (pl.speedBonusTenths / 10).toFixed(1);
+  // Render-only strategy / difficulty tag (e.g. " [Aggressor]" / " [YOU]").
+  const tag = slotLabel === undefined ? '' : ` [${slotLabel}]`;
 
   if (!pl.alive) {
     return {
       label,
-      text: `P${slot + 1} OUT`,
+      text: `P${slot + 1} OUT${tag}`,
       style: OUT_STYLE,
     };
   }
@@ -176,14 +197,14 @@ function playerLineInfo(
     const secs = (pl.trappedTicks / TICK_HZ).toFixed(1);
     return {
       label,
-      text: `P${slot + 1} SHELL ${secs}s  fire ${pl.fire}  x${pl.activeBombs}/${pl.cannon}  +${spd}`,
+      text: `P${slot + 1} SHELL ${secs}s${tag}  fire ${pl.fire}  x${pl.activeBombs}/${pl.cannon}  +${spd}`,
       style: TRAP_STYLE,
     };
   }
 
   return {
     label,
-    text: `P${slot + 1} ALIVE  fire ${pl.fire}  x${pl.activeBombs}/${pl.cannon}  +${spd}`,
+    text: `P${slot + 1} ALIVE${tag}  fire ${pl.fire}  x${pl.activeBombs}/${pl.cannon}  +${spd}`,
     style: ROW_STYLE,
   };
 }
