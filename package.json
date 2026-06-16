@@ -1,0 +1,19 @@
+{
+  "name": "choccus",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Cocoa Clash - chocolate-themed bomber-style online multiplayer game",
+  "type": "module",
+  "workspaces": [
+    "client",
+    "tools/sim-runner"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @choccus/client",
+    "build": "npm run build --workspace @choccus/client",
+    "test": "cd tools/sim-runner && npm test",
+    "lint": "npm run lint --workspace @choccus/client",
+    "serve": "bash scripts/serve.sh",
+    "serve:rebuild": "bash scripts/serve.sh --rebuild"
+  }
+}

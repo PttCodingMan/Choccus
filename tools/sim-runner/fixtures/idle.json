@@ -1,0 +1,8 @@
+{
+  "name": "idle",
+  "description": "2 players (opposing teams), no inputs, 600 ticks — exercises map generation PRNG only.",
+  "seed": 101,
+  "numPlayers": 2,
+  "ticks": 600,
+  "inputs": []
+}

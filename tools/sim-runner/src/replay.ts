@@ -1,0 +1,200 @@
+/**
+ * Replay format + headless runner for the deterministic sim core.
+ *
+ * A replay is a JSON document:
+ *
+ *   {
+ *     "name":        string (optional, for humans),
+ *     "description": string (optional),
+ *     "seed":        number (uint32 match seed),
+ *     "feelParams":  Partial<FeelParams> (optional; defaults via makeFeelParams),
+ *     "numPlayers":  number (1..4),
+ *     "teams":       number[] (optional; team per slot — defaults to slot index,
+ *                    i.e. each player on its own team. Co-op fixtures set e.g.
+ *                    [0, 0] so teammates can rescue each other.),
+ *     "ticks":       number (how many tick() calls to run),
+ *     "inputs":      [{ "tick": n, "slot": s, "dir": bits, "action": bits }, ...]
+ *   }
+ *
+ * SPARSE INPUT SEMANTICS (the contract — keep consistent everywhere):
+ * - `inputs` is an event list. An event sets slot `s`'s InputFrame starting at
+ *   tick `n` (0-based: the frame passed to the tick() call that advances
+ *   state.tick from n to n+1) and PERSISTS until a later event for the same
+ *   slot replaces it.
+ * - Slots with no event yet (or none at all) use NO_INPUT.
+ * - Events may appear in any order; they are sorted by tick (stable: original
+ *   array order breaks ties, so for duplicate (tick, slot) the LAST one in the
+ *   array wins).
+ * - Events with tick >= ticks are ignored; tick < 0 or slot out of range is an
+ *   error.
+ *
+ * The runner is pure orchestration: no Date / Math.random / performance —
+ * everything deterministic lives in client/src/sim.
+ */
+import { readFileSync } from 'node:fs';
+
+import {
+  type FeelParams,
+  makeFeelParams,
+} from '../../../client/src/config/FeelParams';
+import { NO_INPUT, type InputFrame } from '../../../client/src/sim/InputBuffer';
+import {
+  type SimState,
+  createInitialState,
+  tick,
+} from '../../../client/src/sim/Sim';
+
+export interface ReplayInputEvent {
+  tick: number;
+  slot: number;
+  /** Direction bitflags (shared/types Direction). */
+  dir: number;
+  /** ActionFlags bitflags. */
+  action: number;
+}
+
+export interface Replay {
+  name?: string;
+  description?: string;
+  seed: number;
+  feelParams?: Partial<FeelParams>;
+  numPlayers: number;
+  /** Team per slot (optional). Default: team = slot index. */
+  teams?: number[];
+  ticks: number;
+  inputs: ReplayInputEvent[];
+}
+
+export interface HashLogEntry {
+  tick: number;
+  /** uint32 FNV-1a state hash after this tick. */
+  hash: number;
+}
+
+/** Render a uint32 hash as 8 lowercase hex digits. */
+export function hashHex(hash: number): string {
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/** Throw with a useful message if the replay document is malformed. */
+export function validateReplay(replay: Replay): void {
+  if (!Number.isInteger(replay.seed)) throw new Error('replay.seed must be an integer');
+  if (
+    !Number.isInteger(replay.numPlayers) ||
+    replay.numPlayers < 1 ||
+    replay.numPlayers > 4
+  ) {
+    throw new Error('replay.numPlayers must be an integer in 1..4');
+  }
+  if (replay.teams !== undefined) {
+    if (
+      !Array.isArray(replay.teams) ||
+      replay.teams.length !== replay.numPlayers ||
+      !replay.teams.every((t) => Number.isInteger(t) && t >= 0)
+    ) {
+      throw new Error('replay.teams must be numPlayers non-negative integers');
+    }
+  }
+  if (!Number.isInteger(replay.ticks) || replay.ticks < 1) {
+    throw new Error('replay.ticks must be a positive integer');
+  }
+  if (!Array.isArray(replay.inputs)) throw new Error('replay.inputs must be an array');
+  for (const ev of replay.inputs) {
+    if (!Number.isInteger(ev.tick) || ev.tick < 0) {
+      throw new Error(`input event has invalid tick: ${JSON.stringify(ev)}`);
+    }
+    if (!Number.isInteger(ev.slot) || ev.slot < 0 || ev.slot >= replay.numPlayers) {
+      throw new Error(`input event has invalid slot: ${JSON.stringify(ev)}`);
+    }
+    if (!Number.isInteger(ev.dir) || !Number.isInteger(ev.action)) {
+      throw new Error(`input event has invalid dir/action: ${JSON.stringify(ev)}`);
+    }
+  }
+}
+
+/**
+ * Expand the sparse event list into one InputFrame[] (length numPlayers) per
+ * tick, following the persist-until-changed semantics documented above.
+ * Every frame is a FRESH object so callers can't share mutable state.
+ */
+export function expandInputs(replay: Replay): InputFrame[][] {
+  validateReplay(replay);
+  const events = replay.inputs
+    .map((ev, order) => ({ ev, order }))
+    .sort((a, b) => a.ev.tick - b.ev.tick || a.order - b.order);
+
+  const current: InputFrame[] = [];
+  for (let s = 0; s < replay.numPlayers; s++) current.push({ ...NO_INPUT });
+
+  const frames: InputFrame[][] = [];
+  let next = 0;
+  for (let t = 0; t < replay.ticks; t++) {
+    while (next < events.length && events[next]!.ev.tick === t) {
+      const { ev } = events[next]!;
+      current[ev.slot] = { dir: ev.dir, action: ev.action };
+      next += 1;
+    }
+    frames.push(current.map((f) => ({ dir: f.dir, action: f.action })));
+  }
+  return frames;
+}
+
+/**
+ * Run a replay headless and return the per-tick hash log. `onTick` (optional)
+ * observes every post-tick state — used by tests/fixture validation.
+ */
+export function runReplay(
+  replay: Replay,
+  onTick?: (state: SimState) => void,
+): HashLogEntry[] {
+  const frames = expandInputs(replay);
+  const feel = makeFeelParams(replay.feelParams);
+  let state = createInitialState(
+    replay.seed >>> 0,
+    feel,
+    replay.numPlayers,
+    replay.teams !== undefined ? { teams: replay.teams } : undefined,
+  );
+  const log: HashLogEntry[] = [];
+  for (const frame of frames) {
+    state = tick(state, frame);
+    log.push({ tick: state.tick, hash: state.stateHash });
+    if (onTick !== undefined) onTick(state);
+  }
+  return log;
+}
+
+/** Load + validate a replay JSON file. */
+export function loadReplayFile(path: string): Replay {
+  const replay = JSON.parse(readFileSync(path, 'utf8')) as Replay;
+  validateReplay(replay);
+  return replay;
+}
+
+/**
+ * Serialize a replay with one input event per line — compact and diffable
+ * (pretty JSON would explode fixture files to 6 lines per event).
+ */
+export function replayToJson(replay: Replay): string {
+  const head: string[] = [];
+  if (replay.name !== undefined) head.push(`  "name": ${JSON.stringify(replay.name)}`);
+  if (replay.description !== undefined) {
+    head.push(`  "description": ${JSON.stringify(replay.description)}`);
+  }
+  head.push(`  "seed": ${replay.seed}`);
+  if (replay.feelParams !== undefined) {
+    head.push(`  "feelParams": ${JSON.stringify(replay.feelParams)}`);
+  }
+  head.push(`  "numPlayers": ${replay.numPlayers}`);
+  if (replay.teams !== undefined) {
+    head.push(`  "teams": ${JSON.stringify(replay.teams)}`);
+  }
+  head.push(`  "ticks": ${replay.ticks}`);
+  const events = replay.inputs.map(
+    (ev) =>
+      `    { "tick": ${ev.tick}, "slot": ${ev.slot}, "dir": ${ev.dir}, "action": ${ev.action} }`,
+  );
+  const inputs =
+    events.length === 0 ? '  "inputs": []' : `  "inputs": [\n${events.join(',\n')}\n  ]`;
+  return `{\n${head.join(',\n')},\n${inputs}\n}\n`;
+}

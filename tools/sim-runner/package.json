@@ -1,0 +1,21 @@
+{
+  "name": "@choccus/sim-runner",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "test": "tsc --noEmit && vitest run",
+    "replay": "tsx src/run-replay.ts",
+    "tournament": "tsx src/tournament.ts",
+    "gen-fixtures": "tsx src/gen-fixtures.ts",
+    "update-golden": "tsx src/update-golden.ts",
+    "update-v1-golden": "tsx baselines/v1/gen-v1-golden.ts",
+    "version-bench": "tsx src/version-bench.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
