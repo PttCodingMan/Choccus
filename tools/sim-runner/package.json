@@ -10,7 +10,9 @@
     "gen-fixtures": "tsx src/gen-fixtures.ts",
     "update-golden": "tsx src/update-golden.ts",
     "version-bench": "tsx src/version-bench.ts",
-    "duel-bench": "tsx src/duel-bench.ts"
+    "duel-bench": "tsx src/duel-bench.ts",
+    "cross-version-bench": "tsx src/cross-version-bench.ts",
+    "matrix-bench": "tsx src/matrix-bench.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
