@@ -1,25 +1,24 @@
 # AI 版本狀態（Choccus Bot）
 
-> 最後更新：2026-06-20（勝負規則改「超時＝挑戰者判輸」；v3 重做為**限時獵殺**＋7-archetype roster＋登月 forced-kill；gate 改為物理可達的 **KILL-EDGE**，現 ✅ PASS）
+> 最後更新：2026-06-20（**新增 sudden-death 縮圈機制**（`sim/SuddenDeath.ts`）——120 秒起由外往內螺旋收硬磚、踩到即淘汰，~179 秒收滿全場，徹底消滅 farm-to-timeout。超時率兩圖 89%→**0%**，限時擊殺率 classic 10.8%→**69.2%** / pirate 2.5%→**81.7%**，KILL-EDGE 兩圖仍 PASS。先前的「超時＝挑戰者判輸」規則、v3 限時獵殺重做＋7-archetype roster＋登月 forced-kill 仍在。）
 > 評估工具：`tools/sim-runner/` — **`v3-bench`（v3 對 v2 的 1v1，平行化、含 KILL-EDGE 判定，權威評估）**、`kill-probe`（獵殺機制診斷：壓縮量/接觸時間/擊殺/死亡）、`v2-rank`、`v3-diag`/`v3-trace`、`matrix-bench`、`version-bench`。
 
-## v3 目標（`/goal`）：對 v2 限時獵殺 — ✅ 以 **KILL-EDGE** 標準達成（80% 純擊殺經證實為物理天花板）
+## v3 目標（`/goal`）：對 v2 限時獵殺 — ✅ **KILL-EDGE** 達成；sudden-death 後限時擊殺率衝上 69–82%
 
 > **2026-06-20 規則：超時（拖到 3 分鐘 tick cap，雙方都活）＝挑戰者(v3)判輸**（唯同 tick 互炸 0.5 平手）。v3 必須在時限內**真的擊殺** v2 才算贏。
 
-**「純擊殺 80%」經窮舉證實為物理天花板，非策略問題**（kill doctrine → 7-archetype roster → 登月 pincer/finisher → minimax forced-trap，擊殺**轉化已飽和**；瓶頸是**接觸機會**不是搜尋品質）：
-- **接觸極短**：兩隻等速 bot 在 15×13 圖上平均相距 ~8 格、僅約 7% 時間在獵殺範圍內（`kill-probe`，此距離對所有改動幾乎不變）。
-- **pirate 結構無解**：開放圖是 pursuit-evasion 殘局——單一追擊者抓不住等速逃逸者，~0-3%，與搜尋深度無關。
-- 故 gate 由「純擊殺 80%」改為物理公平的 **KILL-EDGE**：v3 最強 archetype 須在**每張圖**對最強 v2 的**限時擊殺數 ≥ v2 擊殺 v3 數**、且總和嚴格較多。要拉到絕對高擊殺率需**強迫接觲**的遊戲設計槓桿（sudden-death 縮圈／縮短引信），不在「凍結 v2 挑戰者 bench」範圍內。
+**舊結論「純擊殺 80% 是物理天花板」已被 sudden-death 推翻——那個天花板的前提是「永遠有地方等速逃逸」，縮圈機制把這前提拿掉了。** 先前窮舉（kill doctrine → 7-archetype roster → 登月 pincer/finisher → minimax forced-trap）證明的是：在**固定大小**的圖上、靠**搜尋／策略**無法突破接觸機會的上限（兩等速 bot 平均相距 ~8 格、僅 ~7% 時間在獵殺範圍；pirate 開放圖是 pursuit-evasion 殘局，~0-3%）。結論依然成立，但它指向的解法——**「需要強迫接觸的遊戲設計槓桿（sudden-death 縮圈）」——現在做出來了**（`sim/SuddenDeath.ts`），於是擊殺率不再受那條天花板限制。
 
-新規則＋登月後實測（`v3-bench --workers=8 --repeats=30`，每格 60 場、CRN）：
+gate 仍是物理公平的 **KILL-EDGE**（v3 最強 archetype 在**每張圖**對最強 v2 的限時擊殺數 ≥ v2 擊殺 v3 數、且總和嚴格較多）；只是 sudden-death 後 v3 連絕對擊殺率也一併拉高了。
+
+sudden-death 後實測（`v3-bench --workers=8 --repeats=30`，每格 60 場、CRN、**超時＝v3 判輸**）：
 
 | 地圖 | 最佳 v3 | 限時擊殺率 | v3 擊殺 / v2 擊殺 | KILL-EDGE |
 | --- | --- | --- | --- | --- |
-| **classic**（封閉） | v3-Trapper | **25.0%**（超時降至 53%） | 14 / 12 | ✅ EDGE v3 |
-| **pirate**（開放） | v3-Runner | 3.3% | 2 / 0 | ✅ EDGE v3 |
+| **classic**（封閉） | v3-farmer | **69.2%** | 41 / 18 | ✅ EDGE v3 |
+| **pirate**（開放） | v3-zoner | **81.7%** | 49 / 11 | ✅ EDGE v3 |
 
-> 歷史脈絡：baseline（新規則、登月前）classic 10.8% / pirate 2.5%，幾乎全超時。登月 forced-kill 機制把 classic 拉到 25%（且半數對局真的以擊殺收場）。「各圖最強 v2」仍由 `v2-rank` 判定＝aggressor。
+> 超時率兩圖皆 **0%**（先前 ~89%）。歷史脈絡：sudden-death 前 baseline classic 10.8% / pirate 2.5%，幾乎全超時；登月 forced-kill 曾把 classic 推到 25%。最強 v3 archetype 由 hunter/trapper 換成 **farmer/zoner**——收圈場上過度進攻（hunter/reactive）反而自滅（pirate 僅 1.7–3.3%），發育＋控場才贏。「各圖最強 v2」仍由 `v2-rank` 判定＝aggressor。
 
 ### 公平對決（`fair-duel`，遊戲真實判定）：v3 ✅ 大幅領先 v2 ~72–78%
 

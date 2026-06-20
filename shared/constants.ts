@@ -80,6 +80,27 @@ export const RESPAWN_PROTECT_TICKS = Math.round(4.0 * TICK_HZ); // 240
 export const MATCH_MAX_TICKS = Math.round(180 * TICK_HZ); // 10800
 
 // ---------------------------------------------------------------------------
+// Sudden death — late-match arena shrink that forces a result before the cap
+// ---------------------------------------------------------------------------
+
+/**
+ * From this tick on, the play area closes in: one interior tile hardens to a
+ * HARD brick every SUDDEN_DEATH_TILE_INTERVAL ticks in an inward spiral (outer
+ * ring of the interior first, center last). An alive player caught on a
+ * hardening tile is crushed — eliminated outright, no shell/rescue (a fully
+ * solidified tile entombs). This kills the farm-to-timeout stall: equal-speed
+ * evasion no longer works once there is nowhere left to flee.
+ *
+ * Tuning: the 13×11 = 143 interior tiles finish hardening at
+ * START + 143*INTERVAL = 7200 + 3575 = 10775 (~179.6 s), just under the cap, so
+ * a match cannot reach MATCH_MAX_TICKS with two players still standing. Both are
+ * pure balance knobs (no determinism impact beyond the grid they harden).
+ */
+// ponytail: START is "後段" (last third). Lower it for more pressure time.
+export const SUDDEN_DEATH_START_TICK = 7200; // 120 s
+export const SUDDEN_DEATH_TILE_INTERVAL = 25; // ticks per hardened tile
+
+// ---------------------------------------------------------------------------
 // Player initial values & caps
 // ---------------------------------------------------------------------------
 

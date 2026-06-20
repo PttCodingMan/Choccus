@@ -38,6 +38,7 @@ import {
   makeFeelParams,
 } from '../../../client/src/config/FeelParams';
 import { NO_INPUT, type InputFrame } from '../../../client/src/sim/InputBuffer';
+import { type MapKind } from '../../../client/src/sim/Map';
 import {
   type SimState,
   createInitialState,
@@ -61,6 +62,8 @@ export interface Replay {
   numPlayers: number;
   /** Team per slot (optional). Default: team = slot index. */
   teams?: number[];
+  /** Map layout (optional). Default: 'classic'. */
+  map?: MapKind;
   ticks: number;
   inputs: ReplayInputEvent[];
 }
@@ -94,6 +97,9 @@ export function validateReplay(replay: Replay): void {
     ) {
       throw new Error('replay.teams must be numPlayers non-negative integers');
     }
+  }
+  if (replay.map !== undefined && replay.map !== 'classic' && replay.map !== 'pirate') {
+    throw new Error("replay.map must be 'classic' or 'pirate'");
   }
   if (!Number.isInteger(replay.ticks) || replay.ticks < 1) {
     throw new Error('replay.ticks must be a positive integer');
@@ -149,12 +155,10 @@ export function runReplay(
 ): HashLogEntry[] {
   const frames = expandInputs(replay);
   const feel = makeFeelParams(replay.feelParams);
-  let state = createInitialState(
-    replay.seed >>> 0,
-    feel,
-    replay.numPlayers,
-    replay.teams !== undefined ? { teams: replay.teams } : undefined,
-  );
+  let state = createInitialState(replay.seed >>> 0, feel, replay.numPlayers, {
+    ...(replay.teams !== undefined ? { teams: replay.teams } : {}),
+    ...(replay.map !== undefined ? { map: replay.map } : {}),
+  });
   const log: HashLogEntry[] = [];
   for (const frame of frames) {
     state = tick(state, frame);

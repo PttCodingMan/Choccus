@@ -8,7 +8,7 @@ import type { AiVersionModule, BotSpec } from '../index';
 import type { IBotController } from '../common/IBotController';
 import { BotController } from './BotController';
 import { botSeed, parseDifficulty, tuningFor, type BotTuning } from './BotConfig';
-import { resolveStrategy, strategyForSlot } from './Strategies';
+import { STRATEGIES, resolveStrategy, strategyForSlot } from './Strategies';
 import { AI_VERSION } from './version';
 
 /** Capitalize a difficulty string for display (mirrors main.ts `cap`). */
@@ -25,6 +25,7 @@ function tuningForSlot(spec: BotSpec, slot: number): BotTuning {
 
 export const v1Module: AiVersionModule = {
   version: AI_VERSION,
+  strategyKeys: STRATEGIES.map((s) => s.key),
 
   createBot(matchSeed: number, slot: number, spec: BotSpec): IBotController {
     return new BotController(botSeed(matchSeed, slot), tuningForSlot(spec, slot), slot);

@@ -15,7 +15,13 @@
  */
 import { Container, Graphics, Text, type TextStyle } from 'pixi.js';
 import { GamePhase } from '../../../shared/types';
-import { MAP_COLS, MATCH_MAX_TICKS, TICK_HZ, TILE_PX } from '../../../shared/constants';
+import {
+  MAP_COLS,
+  MATCH_MAX_TICKS,
+  SUDDEN_DEATH_START_TICK,
+  TICK_HZ,
+  TILE_PX,
+} from '../../../shared/constants';
 import type { SimState } from '../sim/Sim';
 import { resolveOutcome } from '../sim/Outcome';
 import { playerColor } from './PlayerRenderer';
@@ -64,6 +70,21 @@ const OUT_STYLE: Partial<TextStyle> = {
   fill: 0x7a6048,
 } as Partial<TextStyle>;
 
+/** Match clock (top-right). Normal = amber; danger = red once sudden death is on. */
+const CLOCK_STYLE: Partial<TextStyle> = {
+  fontFamily: 'monospace',
+  fontSize: 15,
+  fontWeight: 'bold',
+  fill: 0xffd966,
+} as Partial<TextStyle>;
+
+const CLOCK_DANGER_STYLE: Partial<TextStyle> = {
+  fontFamily: 'monospace',
+  fontSize: 15,
+  fontWeight: 'bold',
+  fill: 0xff5544,
+} as Partial<TextStyle>;
+
 interface PlayerRow {
   swatch: Graphics;
   text: Text;
@@ -72,6 +93,7 @@ interface PlayerRow {
 export class HudRenderer {
   readonly container = new Container();
   private readonly banner: Text;
+  private readonly clock: Text;
   private readonly hint: Text;
   private readonly rows: PlayerRow[] = [];
   /** Append "(R to restart)" to end-of-match banners (hotseat only). */
@@ -94,6 +116,12 @@ export class HudRenderer {
     this.banner = new Text({ text: '', style: BANNER_STYLE });
     this.banner.position.set(PAD, 6);
     this.container.addChild(this.banner);
+
+    // Match clock, top-right (right-anchored so it grows leftward).
+    this.clock = new Text({ text: '', style: CLOCK_STYLE });
+    this.clock.anchor.set(1, 0);
+    this.clock.position.set(HUD_W - PAD, 6);
+    this.container.addChild(this.clock);
 
     // Controls hint
     this.hint = new Text({ text: hintText, style: HINT_STYLE });
@@ -123,6 +151,10 @@ export class HudRenderer {
 
   update(next: SimState): void {
     this.banner.text = bannerText(next, this.restartHint);
+
+    const clk = clockInfo(next);
+    this.clock.text = clk.text;
+    this.clock.style = { ...(clk.danger ? CLOCK_DANGER_STYLE : CLOCK_STYLE) };
 
     for (let i = 0; i < next.players.length; i++) {
       const pl = next.players[i];
@@ -154,6 +186,22 @@ export class HudRenderer {
       row.text.text = text;
     }
   }
+}
+
+/**
+ * Match clock for the top-right HUD: remaining time as M:SS while PLAYING, and a
+ * red "☠ SUDDEN DEATH" prefix once the arena starts closing (tick ≥
+ * SUDDEN_DEATH_START_TICK). Empty (hidden) outside PLAYING. Pure read of
+ * `state.tick` — no wall-clock, no sim mutation.
+ */
+function clockInfo(state: SimState): { text: string; danger: boolean } {
+  if (state.phase !== GamePhase.PLAYING) return { text: '', danger: false };
+  const remTicks = Math.max(0, MATCH_MAX_TICKS - state.tick);
+  const secs = Math.ceil(remTicks / TICK_HZ);
+  const clock = `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
+  return state.tick >= SUDDEN_DEATH_START_TICK
+    ? { text: `☠ SUDDEN DEATH  ${clock}`, danger: true }
+    : { text: `⏱ ${clock}`, danger: false };
 }
 
 function bannerText(state: SimState, restartHint: boolean): string {

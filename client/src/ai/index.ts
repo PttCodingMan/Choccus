@@ -29,6 +29,8 @@ export interface BotSpec {
 /** One AI version's adapter: build a bot and name a bot slot from a BotSpec. */
 export interface AiVersionModule {
   readonly version: number;
+  /** Archetype keys this version actually defines (for UI pickers). */
+  readonly strategyKeys: readonly string[];
   createBot(matchSeed: number, slot: number, spec: BotSpec): IBotController;
   botNameFor(slot: number, spec: BotSpec): string;
 }
