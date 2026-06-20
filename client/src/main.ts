@@ -41,6 +41,7 @@ import { Renderer } from './render/Renderer';
 import { type InputFrame, NO_INPUT } from './sim/InputBuffer';
 import type { MapKind } from './sim/Map';
 import { type SimState, createInitialState, tick } from './sim/Sim';
+import { LossRecorder } from './solo/lossRecorder';
 import { runSpectate } from './spectate/spectateMode';
 import { FeelPanel } from './ui/FeelPanel';
 
@@ -257,6 +258,17 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   };
   let botControllers = buildBots();
 
+  // Explicit team-per-slot (FFA default = team = slot), matching what
+  // createInitialState builds — passed to the recorder so a replay reproduces
+  // the exact teams.
+  const explicitTeams = (): number[] =>
+    teamsForFormat()?.slice() ?? Array.from({ length: 1 + effectiveBots() }, (_, i) => i);
+
+  // Records each solo match as a replay fixture; persists it on an AI loss so we
+  // can re-run the loss headless (`npm run replay`) and diagnose it.
+  const lossRecorder = new LossRecorder();
+  lossRecorder.start(seed, mapKind, 1 + effectiveBots(), explicitTeams());
+
   const keyboard = new KeyboardInput();
   keyboard.attach(window);
 
@@ -300,6 +312,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       teams: teamsForFormat(),
     });
     prev = cur;
+    lossRecorder.start(seed, mapKind, 1 + effectiveBots(), explicitTeams());
     // Render-layer only: refresh HUD labels/hint so a changed bot count shows.
     renderer.setSlotLabels(buildSlotLabels());
     renderer.setHudHint(buildHint(), true);
@@ -481,6 +494,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       const prevTick = cur;
       prev = cur;
       cur = tick(cur, inputs);
+      lossRecorder.tick(prevTick.tick, inputs, prevTick, cur);
       matchSound.tick(prevTick, cur);
       acc -= TICK_MS;
     }
@@ -490,6 +504,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     // guard so the next match auto-restarts too.
     if (cur.phase === GamePhase.OVER && !restartScheduled) {
       restartScheduled = true;
+      const lossSummary = lossRecorder.finishIfAiLost(cur);
+      if (lossSummary !== null) console.log(lossSummary);
       restartTimer = setTimeout(reset, 2500);
     }
 

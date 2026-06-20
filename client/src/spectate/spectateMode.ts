@@ -51,7 +51,7 @@ const MAX_FRAME_MS = 250;
  * (e.g. 2-trapper → v2 normal).
  */
 const ARCHETYPE_KEYS = [
-  'aggressor', 'turtle', 'gambler', 'chaosv', 'tempering', 'farmer',
+  'aggressor', 'turtle', 'gambler', 'chaosv', 'farmer',
   'hunter', 'zoner', 'runner', 'trapper', 'reactive', 'noise',
 ] as const;
 type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number];
@@ -62,7 +62,6 @@ const ARCHETYPE_LABEL: Readonly<Record<ArchetypeKey, string>> = {
   turtle: 'Turtle',
   gambler: 'Gambler',
   chaosv: 'ChaosV',
-  tempering: 'Tempering',
   farmer: 'Farmer',
   hunter: 'Hunter',
   zoner: 'Zoner',
@@ -221,11 +220,15 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
     'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
     'font:13px system-ui,sans-serif;cursor:pointer;';
 
-  // All 8 selectable agents: v1/v2 × {Aggressor, Turtle, Gambler, ChaosV}.
+  // Every selectable agent = each version × ONLY the archetypes it actually
+  // defines (v1/v2: 4 each, v3: 7), so the picker never lists phantom combos
+  // that would silently fall back to that version's difficulty tuning.
   const versions = Object.keys(AI_VERSIONS).map(Number).sort((x, y) => x - y);
   const allAgents: Contestant[] = [];
   for (const v of versions) {
-    for (const k of ARCHETYPE_KEYS) allAgents.push(makeContestant(v, k));
+    for (const k of AI_VERSIONS[v]!.strategyKeys) {
+      allAgents.push(makeContestant(v, k as ArchetypeKey));
+    }
   }
   /** Build a <select> of every agent, pre-selecting `current`. */
   const buildAgentPicker = (top: number, current: Contestant): HTMLSelectElement => {
