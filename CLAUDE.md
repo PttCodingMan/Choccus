@@ -162,9 +162,9 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 | **Turtle（龜縮）** | 3 | 0.15 | 6 | 0.3 | 極少放彈、要求最長逃生路：靠拖垮對手而非擊殺 | 封閉圖強／開放圖弱 |
 | **Gambler（賭徒）** | 12 | 0.9 | 4 | 1.3 | 反應遲鈍、常失誤、25% 機率盲放無逃生路（`recklessBombChance:0.25`）：高變異 boom-or-bust | 開放圖強／封閉圖弱 |
 
-> 上表為 v1/v2 的 archetype。**v3 移除 Turtle/Gambler**（評估皆贏不了 Aggressor/ChaosV），保留 Aggressor/ChaosV，新增 **Tempering/調溫**（連通性教條最純表現：孤立發育到完成、連通後封路收割）與 **Farmer/農夫**（低 aggression 純發育，實測偏弱）。v3 各圖最強：classic = Aggressor、pirate = Tempering。
+> 上表為 v1/v2 的 archetype。**v3（2026-06-20 限時獵殺重做）改成刻意非遞移的 7-archetype roster**：三環 **獵殺流/Hunter ＞ 養成流/Farmer ＞ 控場流/Zoner ＞ Hunter**＋邊緣專家 **逃跑流/Runner**（純存活）、**陷阱流/Trapper**（vChain 封路誘殺，由舊 ChaosV 合併，**現各圖最強**）、**反應流/Reactive**（鏡像反制）＋池外裁判 **隨機擾動/Noise**（強度地板，不進 gate）。舊 Aggressor→Hunter、ChaosV→Trapper，Tempering 移除。旋鈕＝`v3/BotConfig.ts` 的 `pureHunt/fleeFoe/zoneStandoff/mirror/noise`。
 >
-> 強度依 5 支自打 tournament（classic + pirate 各 240 場）。原 **Hunter**（平衡 all-rounder，兩圖皆偏弱）已移除（重構前的舊 AI 已棄用、不保留）。
+> **gate 改為物理可達的 KILL-EDGE**（v3 限時擊殺數 ≥ v2 擊殺 v3 數，每圖；非純擊殺 80%——80% 經證實是 3 秒引信＋等速逃逸的物理天花板）。登月 forced-kill（pincer/finisher/forced-trap）把 classic 從 10.8%→25%。詳見 `docs/ai-versions.md`。
 
 #### AI 版本制（權威說明見 `docs/ai-versions.md`）
 

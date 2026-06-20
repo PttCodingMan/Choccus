@@ -19,9 +19,8 @@ import {
 } from '../../../shared/constants';
 import { AI_VERSIONS, type BotSpec, type IBotController } from '../../../client/src/ai/index';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
-import { type InputFrame } from '../../../client/src/sim/InputBuffer';
 import { type PlayerState } from '../../../client/src/sim/Player';
-import { tick, createInitialState, type SimState } from '../../../client/src/sim/Sim';
+import { tick, createInitialState } from '../../../client/src/sim/Sim';
 import { BASE, type MapKind } from './bench-utils';
 
 const MAX_TICKS = 10800; // 3 min @ 60 Hz (= shared MATCH_MAX_TICKS)
@@ -82,7 +81,7 @@ function main(): number {
     const a = argv.find((x) => x.startsWith(`--${k}=`));
     return a ? a.slice(k.length + 3) : d;
   };
-  const v3Arch = get('v3', 'tempering');
+  const v3Arch = get('v3', 'hunter');
   const v2Arch = get('v2', 'chaosv');
   const repeats = Number(get('repeats', '40'));
   const mapArg = get('map', 'both');

@@ -47,6 +47,23 @@ export interface BotTuning {
   vChainFoeRange?: number;
   /** 模式門檻：敵人在這麼多格曼哈頓距離內就切到對戰模式，否則維持「清軟格農場」模式（undefined 視為合理預設 5）。 */
   combatRangeTiles?: number;
+
+  // --- v3 ROSTER archetype behaviour flags (deliberately non-transitive set) ---
+  // Each switches a distinct behaviour AXIS on top of the shared scoring core so
+  // the archetypes occupy genuinely different corners (the matrix, not a scalar,
+  // reveals the rock-paper-scissors structure). All optional → undefined = the
+  // neutral scoring bot. Pure / deterministic (no new RNG except `noise`, which
+  // uses the threaded bot RNG).
+  /** 獵殺流 Hunter：永遠朝對手逼近、不農田不撿道具、放寬保命換 tempo（接受高風險）。 */
+  pureHunt?: boolean;
+  /** 逃跑流 Runner：永遠走離對手最遠的安全格、幾乎不放彈（純存活，靠耗死魯莽方）。 */
+  fleeFoe?: boolean;
+  /** 控場流 Zoner：與對手保持這個距離的「環」，從環上用炸彈壓縮對手空間、佔中心、把對手往角落趕，不近身（0/undefined = 關閉）。 */
+  zoneStandoff?: number;
+  /** 反應流 Reactive：鏡像/反制對手上一個動作（影子跟隨 + 對手放彈就封其逃生），自己不主導節奏；仍過保命安全網。 */
+  mirror?: boolean;
+  /** 隨機擾動 Noise：池外裁判——加權隨機合法動作，只保留「不主動自殺」的最低理性（強度地板 / 抗過擬合偵測）。 */
+  noise?: boolean;
 }
 
 export const DIFFICULTY_PRESETS: Readonly<Record<Difficulty, BotTuning>> =

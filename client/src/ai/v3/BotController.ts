@@ -318,6 +318,73 @@ const RETREAT_CAP = 8;
  */
 const PROTECT_LEAD_DIST = 12;
 
+// ---------------------------------------------------------------------------
+// KILL DOCTRINE (v3, new win rule: a 3-min timeout is a CHALLENGER LOSS, so a
+// material/development lead is worthless — only an actual kill within the time
+// limit wins). The bot must HUNT: stop farming-to-timeout, close on the foe, and
+// monotonically COMPRESS the foe's time-aware free space (the count of safe
+// reachable tiles it can still flee to) until a bomb seals it. These terms drive
+// that, all while the hard survival gate (W_SURVIVE + bomb-refuge) is untouched —
+// the bot never self-traps; it just converts a survivable position into a kill.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tick after which CLOCK URGENCY begins ramping 0→100 (linear to MATCH_MAX_TICKS).
+ * Before it the bot develops a minimal trap kit (cannon/fire) at full economy;
+ * after it economy/growth fade and the hunt/seal terms scale up, so the back of
+ * the match is spent cornering the foe instead of farming to a timeout loss.
+ * 2400 ticks = 40 s of the 180 s match.
+ */
+const T_HUNT_START = 2400;
+/** Tick at which urgency reaches 100 (full hunt). Earlier than the cap so the
+ * whole back half of the match is fought at max aggression, not just the final
+ * seconds. */
+const T_HUNT_FULL = 9000;
+/** Floor on the hunt-approach scale so the bot ALWAYS camps near the foe (in
+ * position to seal its escape the instant it commits a bomb), more so late. */
+const HUNT_FACTOR_FLOOR = 35;
+
+/** Weight of the FREE-SPACE SEAL term: reward (per safe tile removed from the
+ * foe's reachable refuge) a bomb that compresses the foe's escape space. Sized
+ * so a strong compression rivals survivability once urgency is high, but the
+ * bomb still had to pass the same refuge gate (no self-trap). */
+const W_SEAL = 130;
+/** Cap on raw compression (safe tiles removed from the foe's refuge component). */
+const SEAL_COMPRESS_CAP = 12;
+/** Bonus when a bomb chokes the foe's instantaneous refuge to ≤1 tile (a herding
+ * milestone, not yet a kill — the fuse still gives the foe time to slip out). */
+const SEAL_CHOKE_BONUS = 24;
+/**
+ * Bonus for a FUSE-AWARE genuine kill: the foe's survivability flood (against the
+ * interval danger map WITH this hypothetical bomb + every live bomb) collapses to
+ * a doomed pocket — it cannot reach any refuge over the bomb's real detonation
+ * timeline. Huge (× W_SEAL) so the bot ALWAYS takes a real kill; safe to be huge
+ * because it only fires on a verified trap, never a transient choke. */
+const SEAL_TRUE_KILL = 80;
+/** Foe survivability at/under which the foe is a doomed pocket (cf. survivability:
+ * a no-refuge pocket collapses to ≤1; 0 = already burning where it stands). */
+const FOE_DOOM_THRESHOLD = 1;
+/** MINIMAX forced-trap: only attempt the 2-bomb forced kill when the foe's post-
+ * B1 forced refuge set is at most this many tiles — a near-cornered foe a second
+ * bomb can actually seal. Larger = the open map where forcing is impossible, so we
+ * skip (this is exactly why pirate stays low; classic corridors hit it). */
+const TRAP_R1_MAX = 5;
+/** Cap on the foe-refuge BFS set size (cost bound). */
+const TRAP_SET_CAP = 10;
+/** BFS visited-cell budget when measuring the foe's free space (cheap, bounded). */
+const FREE_SPACE_CAP = 16;
+
+/** Weight of the HUNT-APPROACH term: reward ending CLOSER to the nearest foe
+ * (replaces the protect-lead retreat once the clock is running). */
+const W_HUNT = 12;
+/** Cap on the approach bonus (Manhattan hops from the nearest foe, inverted). */
+const HUNT_CAP = 12;
+/** Lowest the close-quarters survivability CLAMP falls to at full urgency: the
+ * bot still demands this many safe ticks of breathing room (gate-passed), but
+ * beyond it the foe-compression reward decides. Floors aggression so a hunt
+ * never degenerates into trading its own life. */
+const HUNT_SURV_FLOOR = 4;
+
 /** Center tile (used by positionValue): floor(MAP_COLS/2), floor(MAP_ROWS/2). */
 const CENTER_X = Math.floor(MAP_COLS / 2); // 7
 const CENTER_Y = Math.floor(MAP_ROWS / 2); // 6
@@ -364,6 +431,11 @@ export class BotController {
   /** Stuck detector: last tile index and ticks since it last changed. */
   private lastTile = -1;
   private ticksSinceTileChange = 0;
+
+  /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
+   * can derive the foe's last action (move direction / fresh bomb) to mirror. */
+  private lastFoeTile = -1;
+  private lastFoeBombs = 0;
 
   /**
    * Post-bomb escape commitment. After dropping a bomb we lock onto the safe
@@ -461,6 +533,96 @@ export class BotController {
     if (safe.length === 0) return Direction.NONE;
     const pick = safe[this.randInt(0, safe.length - 1)];
     return pick ?? Direction.NONE;
+  }
+
+  /**
+   * 反應流 Reactive — a pure counter-puncher: shadow the foe's last movement and
+   * POUNCE (seal its escape) the instant it commits a fresh bomb; never leads the
+   * tempo. Every action is safety-gated via `safeInterval`, so it cannot suicide.
+   * Reads the foe's "last action" from the tracked nearest-foe tile + enemy bomb
+   * count. Deterministic (fixed iteration order, threaded RNG only for the safe
+   * fallback wander). Returns the InputFrame to play this tick.
+   */
+  private reactiveAction(
+    state: SimState,
+    slot: number,
+    myTeam: number,
+    myX: number,
+    myY: number,
+    myPlayer: { activeBombs: number; cannon: number; fire: number },
+    tpt: number,
+    foeReachTiles: number,
+    safeInterval: Passable,
+    foeTileIdx: number,
+  ): InputFrame {
+    // Count enemy bombs currently live (a rise = the foe's last action was a bomb).
+    let foeBombs = 0;
+    for (const b of state.bombs) {
+      for (const p of state.players) {
+        if (p.slot === b.ownerSlot) {
+          if (p.team !== myTeam) foeBombs += 1;
+          break;
+        }
+      }
+    }
+    let dir = Direction.NONE as number;
+    let bomb = false;
+    if (foeTileIdx >= 0) {
+      const fx = foeTileIdx % MAP_COLS;
+      const fy = (foeTileIdx - fx) / MAP_COLS;
+      const man = Math.abs(myX - fx) + Math.abs(myY - fy);
+      const foeBombed = foeBombs > this.lastFoeBombs;
+      if (
+        foeBombed &&
+        man <= foeReachTiles &&
+        myPlayer.activeBombs < myPlayer.cannon &&
+        bombAt(state.bombs, myX, myY) === undefined &&
+        !this.bombHitsTeammate(state, slot, myTeam, myX, myY, myPlayer.fire) &&
+        this.computeBombGateOk(state, slot, myTeam, myX, myY, myPlayer.fire, tpt, foeReachTiles)
+      ) {
+        bomb = true; // POUNCE on the foe's committed bomb.
+      } else if (this.lastFoeTile >= 0) {
+        // MIRROR: step the SAME direction the foe just moved (shadow it), if safe.
+        const lfx = this.lastFoeTile % MAP_COLS;
+        const lfy = (this.lastFoeTile - lfx) / MAP_COLS;
+        const ddx = fx - lfx;
+        const ddy = fy - lfy;
+        let cand = Direction.NONE as number;
+        if (Math.abs(ddx) >= Math.abs(ddy) && ddx !== 0) {
+          cand = ddx > 0 ? Direction.RIGHT : Direction.LEFT;
+        } else if (ddy !== 0) {
+          cand = ddy > 0 ? Direction.DOWN : Direction.UP;
+        }
+        if (cand !== Direction.NONE && this.dirOk(myX, myY, cand, safeInterval)) {
+          dir = cand;
+        }
+      }
+      // Fall back to stepping toward the foe (counter its position) if no mirror.
+      if (!bomb && dir === Direction.NONE) {
+        const toward = bfsFirstStep(
+          state,
+          myX,
+          myY,
+          (x, y) => x === fx && y === fy,
+          safeInterval,
+        );
+        if (
+          toward !== null &&
+          toward.firstDir !== Direction.NONE &&
+          this.dirOk(myX, myY, toward.firstDir, safeInterval)
+        ) {
+          dir = toward.firstDir;
+        }
+      }
+    }
+    if (!bomb && dir === Direction.NONE) {
+      dir = this.randomSafeDir(myX, myY, safeInterval);
+    }
+    this.lastFoeTile = foeTileIdx;
+    this.lastFoeBombs = foeBombs;
+    if (bomb) return { dir: Direction.NONE, action: ActionFlags.BOMB };
+    if (dir !== Direction.NONE) this.commit(dir);
+    return { dir, action: ActionFlags.NONE };
   }
 
   /** Commit a direction for the replan interval. */
@@ -858,6 +1020,167 @@ export class BotController {
       if (e === undefined || e > STEP_DANGER_HORIZON) n += 1;
     }
     return n;
+  }
+
+  /**
+   * KILL DOCTRINE: the foe's time-aware FREE SPACE — a small BFS count of the
+   * safe tiles the foe at (fx,fy) can still flee to and DWELL on. A tile counts
+   * iff it is open, reachable from the foe (BFS through open tiles, but NOT
+   * through `block`), and non-lethal past the safe horizon (and not in `block`).
+   * `block` is a hypothetical bomb's blast cross treated as a future wall, so
+   * foeFreeSpace(...blast) < foeFreeSpace(...null) measures how much that bomb
+   * compresses the foe — the scalar the seal term drives toward 0. Capped at
+   * FREE_SPACE_CAP. Pure / deterministic (DIRECTION_ORDER, integer, no RNG).
+   */
+  private foeFreeSpace(
+    state: SimState,
+    danger: IntervalDanger,
+    fx: number,
+    fy: number,
+    block: Set<number> | null,
+  ): number {
+    const base = openPassable(state);
+    const startI = idx(fx, fy);
+    const seen = new Set<number>([startI]);
+    const queue: number[] = [startI];
+    let head = 0;
+    let count = 0;
+    while (head < queue.length && count < FREE_SPACE_CAP) {
+      const cur = queue[head]!;
+      head += 1;
+      const cx = cur % MAP_COLS;
+      const cy = (cur - cx) / MAP_COLS;
+      const blocked = block !== null && block.has(cur);
+      const e = danger.earliestLethal(cur);
+      const safeDwell = !blocked && (e === undefined || e > SURV_SAFE_HORIZON);
+      if (safeDwell) count += 1;
+      for (const d of DIRECTION_ORDER) {
+        const nx = cx + dirDX(d);
+        const ny = cy + dirDY(d);
+        if (!inBounds(nx, ny) || !base(nx, ny)) continue;
+        const ni = idx(nx, ny);
+        if (seen.has(ni)) continue;
+        if (block !== null && block.has(ni)) continue; // blast walls off the path.
+        seen.add(ni);
+        queue.push(ni);
+      }
+    }
+    return count;
+  }
+
+  /**
+   * MINIMAX: the SET of safe-dwell tiles the foe can reach (its survival-
+   * maximising refuge options) from `sources` under `danger` — a multi-source
+   * version of foeFreeSpace that returns the tiles, not just a count, so the
+   * forced-trap planner can use the foe's forced refuge R1 as the start set for
+   * the second bomb. Same dwell/expansion rules as survivability (safe-dwell =
+   * never lethal within the safe horizon; never expand through a tile lethal in
+   * the near horizon). Capped. Deterministic (DIRECTION_ORDER, integer).
+   */
+  private foeSafeSet(
+    state: SimState,
+    danger: IntervalDanger,
+    sources: Iterable<number>,
+    cap: number,
+  ): number[] {
+    const base = openPassable(state);
+    const seen = new Set<number>();
+    const queue: number[] = [];
+    for (const s of sources) {
+      if (!seen.has(s)) {
+        seen.add(s);
+        queue.push(s);
+      }
+    }
+    const safe: number[] = [];
+    let head = 0;
+    while (head < queue.length && safe.length < cap) {
+      const cur = queue[head]!;
+      head += 1;
+      const cx = cur % MAP_COLS;
+      const cy = (cur - cx) / MAP_COLS;
+      const e = danger.earliestLethal(cur);
+      if (e === undefined || e > SURV_SAFE_HORIZON) safe.push(cur);
+      for (const d of DIRECTION_ORDER) {
+        const nx = cx + dirDX(d);
+        const ny = cy + dirDY(d);
+        if (!inBounds(nx, ny) || !base(nx, ny)) continue;
+        const ni = idx(nx, ny);
+        if (seen.has(ni)) continue;
+        const ne = danger.earliestLethal(ni);
+        if (ne !== undefined && ne <= STEP_DANGER_HORIZON) continue; // can't cross fire.
+        seen.add(ni);
+        queue.push(ni);
+      }
+    }
+    return safe;
+  }
+
+  /**
+   * KILL DOCTRINE: the free-space SEAL value of a PLACE_BOMB candidate — how much
+   * it compresses the nearest attackable foe's free space (foeFreeSpace before vs
+   * after the bomb's blast is added as a wall), with a CHOKE bonus as that space
+   * collapses to ≤1 tile and a big KILL bonus when it hits 0 (the foe has no safe
+   * tile left = a trap). 0 for non-bomb actions, friendly-fire bombs, or a foe
+   * too far for the blast to plausibly box in (so it never pulls the bot off
+   * productive play far from any foe). This is the heuristic that converts a
+   * survivable position into a kill — the bomb still passes the same refuge gate.
+   */
+  private sealValue(
+    state: SimState,
+    slot: number,
+    myTeam: number,
+    cand: Candidate,
+    fire: number,
+    danger: IntervalDanger,
+  ): number {
+    if (!cand.bomb) return 0;
+    const blast = this.blastTiles(state, cand.rx, cand.ry, fire);
+    // Never reward a bomb that would also hit a teammate (mirror enemyPressure).
+    for (const p of state.players) {
+      if (p.slot === slot) continue;
+      if (p.team !== myTeam || !p.alive || p.trapped) continue;
+      if (blast.has(idx(tileOf(p.posX), tileOf(p.posY)))) return 0;
+    }
+    let best = 0;
+    let dangerWithBomb: IntervalDanger | null = null; // built lazily (expensive).
+    for (const p of state.players) {
+      if (p.slot === slot || p.team === myTeam) continue;
+      if (!p.alive || p.trapped) continue;
+      const ex = tileOf(p.posX);
+      const ey = tileOf(p.posY);
+      // Only a foe the blast can plausibly box in; else a distant foe would make
+      // every bomb look like a seal.
+      if (Math.abs(ex - cand.rx) + Math.abs(ey - cand.ry) > fire + 2) continue;
+      // A foe with an adjacent ally is likely re-rescued — not a clean seal.
+      if (this.foeHasAllyAdjacent(state, p.slot, p.team, ex, ey)) continue;
+      // Cheap INSTANTANEOUS compression — the HERDING gradient: how many safe
+      // tiles this bomb's cross removes from the foe's refuge right now. Drives
+      // the bot to keep squeezing the foe toward a corner where a true trap forms.
+      const before = this.foeFreeSpace(state, danger, ex, ey, null);
+      const after = this.foeFreeSpace(state, danger, ex, ey, blast);
+      let v = Math.min(Math.max(0, before - after), SEAL_COMPRESS_CAP);
+      // FUSE-AWARE FINISH: an instantaneous choke does NOT kill — the 180-tick
+      // fuse gives the foe 3 s to walk out. The real kill is when the foe, over
+      // the bomb's actual detonation timeline (interval danger model, incl. ALL
+      // live bombs — the foe's own + ours), has NO refuge: its survivability
+      // flood collapses to a doomed pocket. Only probe this (expensive: a full
+      // danger-map build) when the cheap signal says the foe is already nearly
+      // boxed (after ≤ 1), so genuine multi-bomb traps — including punishing the
+      // foe as it flees its OWN bomb into ours — get the decisive reward while
+      // distant or open foes cost nothing.
+      if (after <= 1) {
+        v += SEAL_CHOKE_BONUS;
+        if (dangerWithBomb === null) {
+          const hyp = hypotheticalBomb(cand.rx, cand.ry, fire, slot);
+          dangerWithBomb = buildDangerMap(state, [hyp]);
+        }
+        const foeSurv = this.survivability(state, dangerWithBomb, ex, ey);
+        if (foeSurv <= FOE_DOOM_THRESHOLD) v += SEAL_TRUE_KILL;
+      }
+      if (v > best) best = v;
+    }
+    return best;
   }
 
   /**
@@ -1276,6 +1599,10 @@ export class BotController {
       if (p.slot === slot || !p.alive || p.trapped) continue;
       if (p.team === myTeam) continue;
       if (p.cannon <= 0) continue;
+      // No free cannon ⇒ cannot place a NEW pressure bomb (its live bombs are
+      // already in the baseline danger map) — see scenarios.ts. Lets the bot close
+      // during the foe's cooldown instead of treating it as always-able-to-bomb.
+      if (p.activeBombs >= p.cannon) continue;
       const ex = tileOf(p.posX);
       const ey = tileOf(p.posY);
       const info = reach.get(idx(ex, ey));
@@ -1318,6 +1645,7 @@ export class BotController {
     inPlaceBricks: number,
     protectLead: boolean,
     foeTileIdx: number,
+    urgency: number,
   ): number {
     // Synthesize the candidate the v1 term helpers expect. For a bomb leaf the
     // result tile == current tile (bomb drops in place). For a move/stay leaf the
@@ -1356,24 +1684,60 @@ export class BotController {
       inPlaceBricks,
     );
     const econBoost = Math.floor((DEV_ECON_BOOST_MAX * effDevFactor) / 100);
-    const econ = Math.floor((econRaw * (100 + econBoost)) / 100);
+    // KILL DOCTRINE: economy + growth (the farming terms) FADE with clock urgency
+    // — a development lead is worthless under the new timeout=loss rule, so the
+    // back of the match must be spent hunting, not farming. urgency 0 → full
+    // farming (early dev untouched); 100 → farming silenced.
+    // 獵殺流 Hunter (pureHunt) NEVER farms; otherwise farming fades with urgency.
+    const farmScale = this.tuning.pureHunt ? 0 : 100 - urgency;
+    const econ = Math.floor(
+      (Math.floor((econRaw * (100 + econBoost)) / 100) * farmScale) / 100,
+    );
+    const growthScaled = Math.floor((growth * farmScale) / 100);
     const pos = this.positionValue(state, rx, ry);
-    // PROTECT-THE-LEAD retreat term: when ahead+connected, reward result tiles
-    // FARther (Manhattan, capped) from the nearest foe so the bot backs off and
-    // preserves its winning development lead instead of getting cornered.
-    let retreat = 0;
-    if (protectLead && foeTileIdx >= 0) {
+    // KILL DOCTRINE: free-space SEAL — reward a bomb that compresses the foe's
+    // refuge toward 0 (the actual kill mechanism vs a deterministic survivor).
+    const seal = this.sealValue(state, slot, myTeam, cand, fire, danger);
+    // FOE-DISTANCE axis — archetype-dependent (Runner flees, Zoner holds a ring,
+    // everyone else hunts/approaches; protect-lead may back off early):
+    let retreatScaled = 0;
+    let huntScaled = 0;
+    if (foeTileIdx >= 0) {
       const fx = foeTileIdx % MAP_COLS;
       const fy = (foeTileIdx - fx) / MAP_COLS;
-      retreat = Math.min(Math.abs(rx - fx) + Math.abs(ry - fy), RETREAT_CAP);
+      const man = Math.abs(rx - fx) + Math.abs(ry - fy);
+      if (this.tuning.fleeFoe) {
+        // 逃跑流 Runner: always maximize distance from the foe (strong, unfaded).
+        retreatScaled = W_RETREAT * Math.min(man, RETREAT_CAP);
+      } else if (this.tuning.zoneStandoff !== undefined && this.tuning.zoneStandoff > 0) {
+        // 控場流 Zoner: hold a stand-off RING — reward tiles whose foe-distance is
+        // nearest the ring radius (compress from there; never dive, never flee).
+        huntScaled =
+          W_HUNT * Math.max(0, HUNT_CAP - Math.abs(man - this.tuning.zoneStandoff));
+      } else {
+        if (protectLead) {
+          retreatScaled = Math.floor(
+            (W_RETREAT * Math.min(man, RETREAT_CAP) * farmScale) / 100,
+          );
+        }
+        // Hunt is ALWAYS at least partly on (camp near the foe to seal its escape
+        // the moment it commits a bomb); pureHunt = always FULL strength.
+        const approach = Math.max(0, HUNT_CAP - man);
+        const huntFactor = this.tuning.pureHunt
+          ? 100
+          : Math.max(HUNT_FACTOR_FLOOR, urgency);
+        huntScaled = Math.floor((W_HUNT * approach * huntFactor) / 100);
+      }
     }
     return (
       W_RESCUE * rescue +
       wAttack * pressure +
+      W_SEAL * seal +
       W_ECON * econ +
-      W_GROWTH * growth +
+      W_GROWTH * growthScaled +
       W_POSITION * pos +
-      W_RETREAT * retreat
+      retreatScaled +
+      huntScaled
     );
   }
 
@@ -1433,6 +1797,210 @@ export class BotController {
     );
   }
 
+  /**
+   * MULTI-BOMB ATTACK pincer (v3 MOONSHOT — forced-kill construction). While
+   * retreating from a just-dropped bomb with a foe IN RANGE, if a spare cannon
+   * lets us drop ANOTHER bomb on the current tile that further COMPRESSES that
+   * foe's free space (sealValue > 0 — and sealValue's kill check is already
+   * live-bomb-aware: it scores the foe's OPTIMAL flee against EVERY live bomb
+   * plus this one, so a second bomb that covers the first bomb's escape shadow
+   * reads as a genuine seal/kill), AND the SAME pessimistic refuge gate still
+   * finds us an escape vs ALL live bombs PLUS this one, drop it. This builds the
+   * 2-3 bomb pincer a single bomb-and-flee never can: the foe is herded into the
+   * first bomb's shadow and sealed by the second. Self-gating (seal>0 needs a foe
+   * in blast range), so it only ever fires in genuine close-quarters attack — far
+   * from any foe it returns null and the farming pincer handles packing bricks.
+   * Returns the validated refuge to retreat to, or null. Pure / deterministic.
+   */
+  private tryMultiBombAttack(
+    state: SimState,
+    slot: number,
+    myTeam: number,
+    myX: number,
+    myY: number,
+    myPlayer: { activeBombs: number; cannon: number; fire: number },
+    ticksPerTile: number,
+    danger: IntervalDanger,
+  ): readonly [number, number] | null {
+    if (myPlayer.activeBombs >= myPlayer.cannon) return null;
+    if (bombAt(state.bombs, myX, myY) !== undefined) return null;
+    if (this.bombHitsTeammate(state, slot, myTeam, myX, myY, myPlayer.fire)) {
+      return null;
+    }
+    // Productive ATTACK only: the bomb must compress some foe (seal>0). This both
+    // self-gates to close quarters and avoids wasting a cannon on a no-op bomb.
+    const cand: Candidate = {
+      dir: Direction.NONE as number,
+      bomb: true,
+      rx: myX,
+      ry: myY,
+      score: 0,
+      survSafe: true,
+      refugeX: -1,
+      refugeY: -1,
+    };
+    if (this.sealValue(state, slot, myTeam, cand, myPlayer.fire, danger) <= 0) {
+      return null;
+    }
+    const foeReachTiles = this.tuning.combatRangeTiles ?? 5;
+    return this.validateBombRefugePessimistic(
+      state,
+      slot,
+      myTeam,
+      myX,
+      myY,
+      myPlayer.fire,
+      ticksPerTile,
+      foeReachTiles,
+    );
+  }
+
+  /**
+   * MOONSHOT — decisive FINISHING MOVE. Each decision tick, before the general
+   * scoring, look for a CONFIRMED kill: a bomb (on our tile, or one safe step
+   * away) whose blast — combined with EVERY live bomb already on the field (our
+   * earlier pincer bomb, the foe's own bomb) — drives the foe's fuse-aware
+   * survivability to a doomed pocket (≤ FOE_DOOM_THRESHOLD). The foe's optimal
+   * flee is modelled by the same `survivability` flood the bot trusts for itself,
+   * so a "confirmed" kill means the foe genuinely cannot escape over the real
+   * detonation timeline. Returns the bomb / the step toward the kill tile, or null
+   * if no confirmed kill exists. This guarantees the bot never lets the depth
+   * search out-vote a real finish (the single biggest cause of "compresses the foe
+   * to a seal every game but converts almost none"). Pure / deterministic.
+   */
+  private tryFinishingMove(
+    state: SimState,
+    slot: number,
+    myTeam: number,
+    myX: number,
+    myY: number,
+    myPlayer: { activeBombs: number; cannon: number; fire: number },
+    tpt: number,
+    safeInterval: Passable,
+    foeTileIdx: number,
+  ): InputFrame | null {
+    if (foeTileIdx < 0) return null;
+    if (myPlayer.activeBombs >= myPlayer.cannon) return null; // no bomb to throw.
+    const fx = foeTileIdx % MAP_COLS;
+    const fy = (foeTileIdx - fx) / MAP_COLS;
+    const combatRange = this.tuning.combatRangeTiles ?? 5;
+    // Only near the foe (cheap gate; the blast must be able to reach it anyway).
+    if (Math.abs(myX - fx) + Math.abs(myY - fy) > combatRange + 2) return null;
+    // Does a bomb at (bx,by) with our fire CONFIRM a kill? (friendly-fire-safe,
+    // refuge-gated for US, and the foe's survivability vs all live bombs + this
+    // one collapses to a doomed pocket.)
+    const confirmsKill = (bx: number, by: number): boolean => {
+      if (bombAt(state.bombs, bx, by) !== undefined) return false;
+      if (this.bombHitsTeammate(state, slot, myTeam, bx, by, myPlayer.fire)) {
+        return false;
+      }
+      if (
+        !this.computeBombGateOk(
+          state, slot, myTeam, bx, by, myPlayer.fire, tpt, combatRange,
+        )
+      ) {
+        return false;
+      }
+      const hyp = hypotheticalBomb(bx, by, myPlayer.fire, slot);
+      const d = buildDangerMap(state, [hyp]);
+      return this.survivability(state, d, fx, fy) <= FOE_DOOM_THRESHOLD;
+    };
+    // 1) Bomb our CURRENT tile if that confirms the kill (the finisher itself).
+    if (confirmsKill(myX, myY)) {
+      return { dir: Direction.NONE as number, action: ActionFlags.BOMB };
+    }
+    // 2) A safe ADJACENT tile from which a bomb confirms the kill → step there
+    // (we finish next tick). Fixed DIRECTION_ORDER → deterministic first match.
+    for (const dd of DIRECTION_ORDER) {
+      const nx = myX + dirDX(dd);
+      const ny = myY + dirDY(dd);
+      if (!inBounds(nx, ny) || !safeInterval(nx, ny)) continue;
+      if (confirmsKill(nx, ny)) {
+        this.commit(dd);
+        return { dir: dd, action: ActionFlags.NONE };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * MINIMAX FORCED-TRAP (the moonshot core: the search MODELS the opponent's
+   * forced response). For a bomb B1 on our current tile, compute the foe's FORCED
+   * refuge R1 — the survival-maximising tiles it can still safely reach once B1 is
+   * down (its best replies). If R1 is small enough to seal (a cornered foe, i.e.
+   * a closed-map corridor; an open map gives a large R1 and we skip), look for a
+   * SECOND bomb B2 on a reachable tile such that the foe is doomed from EVERY tile
+   * in R1 (its best response still dies — a genuine forced kill, fuse-aware via
+   * the interval danger model). If found, COMMIT B1 now; the pincer / finishing
+   * move place B2 over the next ticks. Returns the bomb action or null. Cost-
+   * bounded (B1 = current tile only; runs only when a foe is close). Pure.
+   */
+  private tryForcedTrap(
+    state: SimState,
+    slot: number,
+    myTeam: number,
+    myX: number,
+    myY: number,
+    myPlayer: { activeBombs: number; cannon: number; fire: number },
+    tpt: number,
+    safeInterval: Passable,
+    foeTileIdx: number,
+  ): InputFrame | null {
+    if (foeTileIdx < 0) return null;
+    if (myPlayer.activeBombs >= myPlayer.cannon) return null; // no bomb to start with.
+    const fx = foeTileIdx % MAP_COLS;
+    const fy = (foeTileIdx - fx) / MAP_COLS;
+    const combatRange = this.tuning.combatRangeTiles ?? 5;
+    if (Math.abs(myX - fx) + Math.abs(myY - fy) > combatRange + 2) return null;
+    // B1 on our current tile must be friendly-fire-safe and leave US an escape.
+    if (bombAt(state.bombs, myX, myY) !== undefined) return null;
+    if (this.bombHitsTeammate(state, slot, myTeam, myX, myY, myPlayer.fire)) {
+      return null;
+    }
+    if (
+      !this.computeBombGateOk(
+        state, slot, myTeam, myX, myY, myPlayer.fire, tpt, combatRange,
+      )
+    ) {
+      return null;
+    }
+    const hyp1 = hypotheticalBomb(myX, myY, myPlayer.fire, slot);
+    const d1 = buildDangerMap(state, [hyp1]);
+    const r1 = this.foeSafeSet(state, d1, [idx(fx, fy)], TRAP_SET_CAP);
+    if (r1.length === 0) {
+      return { dir: Direction.NONE as number, action: ActionFlags.BOMB }; // B1 alone kills.
+    }
+    if (r1.length > TRAP_R1_MAX) return null; // too open to force a seal.
+    // Need a SECOND bomb to seal R1: a spare cannon beyond the one for B1.
+    if (myPlayer.cannon - myPlayer.activeBombs < 2) return null;
+    // Search a sealing B2 on a safe reachable neighbour: forced kill iff the foe,
+    // from EVERY tile of its forced refuge R1, is doomed under B1+B2.
+    for (const dd of DIRECTION_ORDER) {
+      const b2x = myX + dirDX(dd);
+      const b2y = myY + dirDY(dd);
+      if (!inBounds(b2x, b2y) || !safeInterval(b2x, b2y)) continue;
+      if (bombAt(state.bombs, b2x, b2y) !== undefined) continue;
+      if (this.bombHitsTeammate(state, slot, myTeam, b2x, b2y, myPlayer.fire)) {
+        continue;
+      }
+      const hyp2 = hypotheticalBomb(b2x, b2y, myPlayer.fire, slot);
+      const d2 = buildDangerMap(state, [hyp1, hyp2]);
+      let forced = true;
+      for (const t of r1) {
+        const tx = t % MAP_COLS;
+        const ty = (t - tx) / MAP_COLS;
+        if (this.survivability(state, d2, tx, ty) > FOE_DOOM_THRESHOLD) {
+          forced = false;
+          break;
+        }
+      }
+      if (forced) {
+        return { dir: Direction.NONE as number, action: ActionFlags.BOMB };
+      }
+    }
+    return null;
+  }
+
   /** This bot's InputFrame for this tick. MUTATES internal state. */
   sample(state: SimState, slot: number): InputFrame {
     void this.ctorSlot; // ctor slot is debug/seed only; `slot` wins.
@@ -1482,10 +2050,20 @@ export class BotController {
       // (using spare cannons) instead of one-bomb-then-flee, ~doubling farming
       // throughput on the closed map. The gate is the SAME one single bombs pass,
       // so it can never self-trap; gated to far-from-foe so it only farms.
+      // MOONSHOT: the ATTACK pincer (stack a sealing bomb on a foe in range) takes
+      // priority over the farming pincer — building a forced kill beats packing
+      // bricks. Both re-validate the bot's own escape vs all live bombs + the new
+      // one, so neither can self-trap.
+      const attackRefuge =
+        this.tuning.fleeFoe || this.tuning.noise || this.tuning.mirror
+          ? null
+          : this.tryMultiBombAttack(state, slot, myTeam, myX, myY, myPlayer, tpt, danger);
       const farmRefuge =
-        profile.multiBombFarm
-          ? this.tryMultiBombFarm(state, slot, myTeam, myX, myY, myPlayer, tpt, profile)
-          : null;
+        attackRefuge !== null
+          ? attackRefuge
+          : profile.multiBombFarm
+            ? this.tryMultiBombFarm(state, slot, myTeam, myX, myY, myPlayer, tpt, profile)
+            : null;
       if (farmRefuge !== null) {
         this.threatPending = myDangerEarliest !== undefined;
         this.reactionTimer = 0;
@@ -1556,6 +2134,20 @@ export class BotController {
     // growth pull so growth competes with attack until the bot is developed.
     const devFactor = this.developmentFactor(myPlayer.fire, myPlayer.cannon);
 
+    // KILL DOCTRINE clock urgency (0..100): 0 until T_HUNT_START (develop a trap
+    // kit at full economy), then ramps linearly to 100 at the tick cap. Fades the
+    // farming terms, scales up the hunt pull, and loosens the close-quarters
+    // survivability CLAMP (never the refuge gate) so a compressing bomb can win.
+    const urgency =
+      state.tick <= T_HUNT_START
+        ? 0
+        : Math.min(
+            100,
+            Math.floor(
+              ((state.tick - T_HUNT_START) * 100) / (T_HUNT_FULL - T_HUNT_START),
+            ),
+          );
+
     // Nearest attackable-foe BFS distance over open passability, computed ONCE
     // here (capped 40, 40 when no foe). It feeds BOTH the close-quarters engage
     // override below AND aggressionWeight's proxFactor (passed in), so the two
@@ -1576,6 +2168,52 @@ export class BotController {
         foeDist = Math.min(40, foeHit.dist);
         nearestFoeTileIdx = idx(foeHit.target[0], foeHit.target[1]);
       }
+    }
+
+    // 隨機擾動 Noise (out-of-pool floor) + 反應流 Reactive (counter-puncher) are
+    // SHORT-CIRCUIT controllers: they reuse the survival-first net / escape
+    // override that already ran above (so they don't suicide), then REPLACE the
+    // strategic forward search with their own simple rule. Placed here so both
+    // see the nearest-foe tile.
+    if (this.tuning.noise || this.tuning.mirror) {
+      const foeReachTiles = this.tuning.combatRangeTiles ?? 5;
+      if (this.tuning.noise) {
+        // Weighted-random legal move; occasionally an ESCAPABLE bomb (gate-checked
+        // so it never self-traps). Pure anti-suicide rationality only.
+        if (
+          this.randFloat() < this.tuning.bombChance &&
+          myPlayer.activeBombs < myPlayer.cannon &&
+          bombAt(state.bombs, myX, myY) === undefined &&
+          !this.bombHitsTeammate(state, slot, myTeam, myX, myY, myPlayer.fire) &&
+          this.computeBombGateOk(state, slot, myTeam, myX, myY, myPlayer.fire, tpt, foeReachTiles)
+        ) {
+          return { dir: Direction.NONE, action: ActionFlags.BOMB };
+        }
+        const d = this.randomSafeDir(myX, myY, safeOpenInterval);
+        this.commit(d);
+        return { dir: d, action: ActionFlags.NONE };
+      }
+      // Reactive (mirror): shadow the foe's last move + pounce on its bombs.
+      return this.reactiveAction(
+        state, slot, myTeam, myX, myY, myPlayer, tpt, foeReachTiles,
+        safeOpenInterval, nearestFoeTileIdx,
+      );
+    }
+
+    // MOONSHOT: take any CONFIRMED kill decisively (a fighting archetype never
+    // lets the depth search out-vote a real finish). Runner (fleeFoe) abstains —
+    // it wins only by survival, by design.
+    if (!this.tuning.fleeFoe) {
+      const finish = this.tryFinishingMove(
+        state, slot, myTeam, myX, myY, myPlayer, tpt, safeOpenInterval, nearestFoeTileIdx,
+      );
+      if (finish !== null) return finish;
+      // MINIMAX: if no immediate kill, look for a 2-bomb FORCED kill (model the
+      // foe's best response) and commit the first bomb to start it.
+      const trap = this.tryForcedTrap(
+        state, slot, myTeam, myX, myY, myPlayer, tpt, safeOpenInterval, nearestFoeTileIdx,
+      );
+      if (trap !== null) return trap;
     }
 
     // PROTECT-THE-LEAD (v3, classic): when CONNECTED to a foe (foeDist <
@@ -1623,11 +2261,19 @@ export class BotController {
     // are NOT affected. When growUntilConnected is false (a neutral profile) or a
     // foe is close-quarters engaged, this is byte-identical to v2.
     const isolated = profile.growUntilConnected && foeDist >= ISOLATED_FOE_DIST;
-    const effDevFactor = foeEngaged
+    // KILL DOCTRINE: the isolated farm-to-completion floor FADES with urgency —
+    // late in the match, stop farming the corner to a timeout loss; let real
+    // readiness govern (so the bot digs toward / hunts the foe instead).
+    const isolatedFloor = Math.floor((profile.isolatedDevFloor * (100 - urgency)) / 100);
+    // 獵殺流 Hunter (pureHunt): never farm — force full readiness so econ boost /
+    // growth pull are off and attack is uncut, every tick, regardless of dev.
+    const effDevFactor = this.tuning.pureHunt
       ? 0
-      : isolated
-        ? Math.max(devFactor, profile.isolatedDevFloor)
-        : devFactor;
+      : foeEngaged
+        ? 0
+        : isolated
+          ? Math.max(devFactor, isolatedFloor)
+          : devFactor;
 
     // (A) Positional growth pull: ONE BFS reachable map over open passability
     // gives every reachable tile's hop distance + first-step direction. From it
@@ -1903,6 +2549,7 @@ export class BotController {
             inPlaceBricksForGrowth,
             protectLead,
             nearestFoeTileIdx,
+            urgency,
           );
           rewardCache.set(key, v);
           return v;
@@ -1937,9 +2584,22 @@ export class BotController {
       {
         deferredBombDiscountPct: profile.deferredBombDiscountPct,
         stayPenalty: profile.stayPenalty,
+        // KILL DOCTRINE: the close-quarters caution (full survEnough) LOOSENS with
+        // urgency. The hard refuge GATE is untouched (a bomb still needs an escape
+        // — no self-trap), but the survivability MAGNITUDE clamp drops from full
+        // (early) toward HUNT_SURV_FLOOR (late), so among gate-passed actions a
+        // foe-compressing bomb is no longer out-voted by squeezing out one more
+        // tick of the bot's own already-safe breathing room. Far from any foe the
+        // farming clamp (isolatedSurvEnough) is unchanged.
+        // 獵殺流 Hunter (pureHunt) accepts risk ALWAYS (clamp at the floor); other
+        // archetypes loosen the close-quarters clamp only as urgency rises.
         survEnough:
           foeDist < profile.cautionDist
-            ? profile.survEnough
+            ? this.tuning.pureHunt
+              ? HUNT_SURV_FLOOR
+              : urgency === 0
+                ? profile.survEnough
+                : Math.max(HUNT_SURV_FLOOR, 28 - Math.floor((urgency * 24) / 100))
             : profile.isolatedSurvEnough,
       } satisfies SearchKnobs,
     );

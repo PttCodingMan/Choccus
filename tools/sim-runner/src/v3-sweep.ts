@@ -19,7 +19,7 @@ import {
 import { AI_VERSIONS, type BotSpec, type IBotController } from '../../../client/src/ai/index';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
 import { type PlayerState } from '../../../client/src/sim/Player';
-import { tick, createInitialState, type SimState } from '../../../client/src/sim/Sim';
+import { tick, createInitialState } from '../../../client/src/sim/Sim';
 import { BotController } from '../../../client/src/ai/v3/BotController';
 import { botSeed, tuningFor, parseDifficulty } from '../../../client/src/ai/v3/BotConfig';
 import { resolveStrategy as resolveV3 } from '../../../client/src/ai/v3/Strategies';

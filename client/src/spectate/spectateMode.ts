@@ -45,12 +45,14 @@ const MAX_FRAME_MS = 250;
 
 /**
  * Archetype keys spectate accepts in `?lineup=`. Covers every key across all AI
- * versions: v1/v2 use aggressor/turtle/gambler/chaosv; v3 drops turtle/gambler and
- * adds tempering/farmer. A key a given version doesn't define falls back to that
- * version's difficulty tuning (e.g. 2-tempering → v2 normal).
+ * versions: v1/v2 use aggressor/turtle/gambler/chaosv; v3 is the 7-archetype
+ * limited-kill roster hunter/farmer/zoner/runner/trapper/reactive/noise. A key a
+ * given version doesn't define falls back to that version's difficulty tuning
+ * (e.g. 2-trapper → v2 normal).
  */
 const ARCHETYPE_KEYS = [
   'aggressor', 'turtle', 'gambler', 'chaosv', 'tempering', 'farmer',
+  'hunter', 'zoner', 'runner', 'trapper', 'reactive', 'noise',
 ] as const;
 type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number];
 
@@ -62,6 +64,12 @@ const ARCHETYPE_LABEL: Readonly<Record<ArchetypeKey, string>> = {
   chaosv: 'ChaosV',
   tempering: 'Tempering',
   farmer: 'Farmer',
+  hunter: 'Hunter',
+  zoner: 'Zoner',
+  runner: 'Runner',
+  trapper: 'Trapper',
+  reactive: 'Reactive',
+  noise: 'Noise',
 };
 
 /** Allowed sim-speed multipliers. */

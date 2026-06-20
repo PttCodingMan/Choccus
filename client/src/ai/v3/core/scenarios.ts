@@ -51,6 +51,13 @@ function enemyPressureBombs(
     if (p.slot === mySlot || !p.alive || p.trapped) continue;
     if (p.team === myTeam) continue;
     if (p.cannon <= 0) continue;
+    // A foe with NO FREE CANNON (all its bombs are already live/cooling) cannot
+    // place a NEW pressure bomb this decision — its live bombs are already in the
+    // baseline danger map. Dropping the hypothetical lets the bot safely close
+    // during the foe's cannon cooldown (the window the pincer needs) instead of
+    // treating every nearby foe as permanently able to bomb. Re-pessimised each
+    // tick, so when a bomb detonates and frees a cannon the caution returns.
+    if (p.activeBombs >= p.cannon) continue;
     const ex = tileOf(p.posX);
     const ey = tileOf(p.posY);
     const info = reach.get(idx(ex, ey));
