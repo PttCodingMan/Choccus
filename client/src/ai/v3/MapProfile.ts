@@ -120,6 +120,14 @@ export interface MapProfile {
    */
   readonly cautionDist: number;
   /**
+   * When true, once CONNECTED to a foe (within cautionDist) AND ahead on total
+   * pickups, the bot is pulled AWAY from the foe (a retreat term) to preserve its
+   * winning development lead instead of getting cornered and killed — the closed
+   * map is a development race where an aggressive engage loses to the wall-off, so
+   * the winning play is "out-develop, then don't die". false = no retreat bias.
+   */
+  readonly protectLead: boolean;
+  /**
    * When true, the bot may PACK a brick cluster by dropping additional bombs
    * while retreating (using spare cannons), each re-validated by the SAME refuge
    * gate single bombs pass (so it cannot self-trap) and only in a safe farming

@@ -72,7 +72,6 @@ import {
 } from '../common/grid';
 import { type IntervalDanger, buildDangerMap } from '../common/dangerMap';
 import {
-  ANTI_BACKTRACK_PENALTY,
   COMMIT_HYSTERESIS,
   FARM_HOLD_TICKS,
   FIGHT_HOLD_TICKS,
@@ -120,11 +119,11 @@ const ESCAPE_COMMIT_MAX_TICKS = 120;
 const STEP_DANGER_HORIZON = SPARK_TICKS + 4;
 
 // ---------------------------------------------------------------------------
-// Scoring weights (integer; W_SURVIVE highest, W_POSITION smallest). Each term
-// returns a small bounded non-negative integer, so the weighted sum cannot
-// overflow and survivability always dominates.
+// Scoring weights (integer; survivability — weighted W_SURVIVE=1000 inside the
+// forward search, see core/forwardSearch.ts — dominates; W_POSITION smallest).
+// Each term returns a small bounded non-negative integer so the weighted sum
+// cannot overflow.
 // ---------------------------------------------------------------------------
-const W_SURVIVE = 1000;
 const W_RESCUE = 120;
 const W_ATTACK_BASE = 60;
 const W_ECON = 20;

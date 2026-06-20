@@ -48,8 +48,15 @@ const randomSeed = (): number => Math.floor(Math.random() * 0x1_0000_0000) >>> 0
 /** Clamp big frame gaps (tab switch, breakpoint) to avoid a spiral of death. */
 const MAX_FRAME_MS = 250;
 
-/** The four archetype keys, in fixed order (mirrors the benches). */
-const ARCHETYPE_KEYS = ['aggressor', 'turtle', 'gambler', 'chaosv'] as const;
+/**
+ * Archetype keys spectate accepts in `?lineup=`. Covers every key across all AI
+ * versions: v1/v2 use aggressor/turtle/gambler/chaosv; v3 drops turtle/gambler and
+ * adds tempering/farmer. A key a given version doesn't define falls back to that
+ * version's difficulty tuning (e.g. 2-tempering → v2 normal).
+ */
+const ARCHETYPE_KEYS = [
+  'aggressor', 'turtle', 'gambler', 'chaosv', 'tempering', 'farmer',
+] as const;
 type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number];
 
 /** Display name per archetype key (note ChaosV's mixed case). */
@@ -58,6 +65,8 @@ const ARCHETYPE_LABEL: Readonly<Record<ArchetypeKey, string>> = {
   turtle: 'Turtle',
   gambler: 'Gambler',
   chaosv: 'ChaosV',
+  tempering: 'Tempering',
+  farmer: 'Farmer',
 };
 
 /** Allowed sim-speed multipliers. */

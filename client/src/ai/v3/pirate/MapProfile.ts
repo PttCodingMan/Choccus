@@ -31,6 +31,9 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   isolatedSurvEnough: 8,
   // Full caution within this many open-path hops of a foe (else farm aggressively).
   cautionDist: 6,
+  // Pirate has real kills and v3 already passes there; keep the aggressive engage
+  // (no lead-protection retreat) so as not to disturb the passing pirate result.
+  protectLead: false,
   // Parallel-bomb cluster farming while retreating (gate-validated, far-from-foe).
   multiBombFarm: true,
 });

@@ -48,6 +48,7 @@ function classicProfile(over: Partial<MapProfile>): MapProfile {
     isolatedDevFloor: 100,
     isolatedSurvEnough: 8,
     cautionDist: 6,
+    protectLead: true,
     multiBombFarm: true,
     ...over,
   }) as MapProfile;

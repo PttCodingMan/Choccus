@@ -76,6 +76,28 @@ export const STRATEGIES: ReadonlyArray<{
       combatRangeTiles: 6,
     }),
   }),
+  // 農夫/Farmer — the development-race specialist for the closed map. Data shows
+  // SEEKING the foe loses on classic (an aggressive engage gets cornered and
+  // killed by v2's wall-off), so this archetype keeps aggression MINIMAL (never
+  // hunts), farms at near-every opportunity, and demands the LONGEST escape — it
+  // out-develops the opponent and simply survives, letting the tick-cap item
+  // tiebreak decide. The connectivity doctrine still farms it to completion while
+  // isolated; low aggression just means it won't throw the won race away chasing
+  // a kill once paths open.
+  Object.freeze({
+    key: 'farmer',
+    name: '農夫/Farmer',
+    tuning: Object.freeze({
+      reactionDelayTicks: 3,
+      mistakeChance: 0.03,
+      replanIntervalTicks: 8,
+      maxEscapeLen: 6, // longest escape budget → safest farming, fewest deaths.
+      bombChance: 0.98, // farm at nearly every opportunity.
+      aggression: 0.3, // minimal: never hunt the foe (engaging loses on classic).
+      recklessBombChance: 0,
+      combatRangeTiles: 4, // only "engage" at point-blank, otherwise keep farming.
+    }),
+  }),
 ]);
 
 /**

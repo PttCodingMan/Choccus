@@ -72,7 +72,6 @@ import {
 } from '../common/grid';
 import { type IntervalDanger, buildDangerMap } from '../common/dangerMap';
 import {
-  ANTI_BACKTRACK_PENALTY,
   COMMIT_HYSTERESIS,
   FARM_HOLD_TICKS,
   FIGHT_HOLD_TICKS,
@@ -120,11 +119,11 @@ const ESCAPE_COMMIT_MAX_TICKS = 120;
 const STEP_DANGER_HORIZON = SPARK_TICKS + 4;
 
 // ---------------------------------------------------------------------------
-// Scoring weights (integer; W_SURVIVE highest, W_POSITION smallest). Each term
-// returns a small bounded non-negative integer, so the weighted sum cannot
-// overflow and survivability always dominates.
+// Scoring weights (integer; survivability — weighted W_SURVIVE=1000 inside the
+// forward search, see core/forwardSearch.ts — dominates; W_POSITION smallest).
+// Each term returns a small bounded non-negative integer so the weighted sum
+// cannot overflow.
 // ---------------------------------------------------------------------------
-const W_SURVIVE = 1000;
 const W_RESCUE = 120;
 const W_ATTACK_BASE = 60;
 const W_ECON = 20;
@@ -308,6 +307,16 @@ const ISOLATED_FOE_DIST = 40;
  * kept below the 1..5 direct-hit value so a real hit is always preferred.
  */
 const CUTOFF_CAP = 3;
+
+/** Weight of the protect-the-lead retreat term (reward per tile of foe distance). */
+const W_RETREAT = 40;
+/** Cap on the retreat distance bonus (Manhattan hops from the nearest foe). */
+const RETREAT_CAP = 8;
+/**
+ * Open-path foe distance under which protect-the-lead retreat engages (wider than
+ * cautionDist so the bot backs off BEFORE the foe closes into kill range).
+ */
+const PROTECT_LEAD_DIST = 12;
 
 /** Center tile (used by positionValue): floor(MAP_COLS/2), floor(MAP_ROWS/2). */
 const CENTER_X = Math.floor(MAP_COLS / 2); // 7
@@ -1307,6 +1316,8 @@ export class BotController {
     growthDist: number,
     effDevFactor: number,
     inPlaceBricks: number,
+    protectLead: boolean,
+    foeTileIdx: number,
   ): number {
     // Synthesize the candidate the v1 term helpers expect. For a bomb leaf the
     // result tile == current tile (bomb drops in place). For a move/stay leaf the
@@ -1347,12 +1358,22 @@ export class BotController {
     const econBoost = Math.floor((DEV_ECON_BOOST_MAX * effDevFactor) / 100);
     const econ = Math.floor((econRaw * (100 + econBoost)) / 100);
     const pos = this.positionValue(state, rx, ry);
+    // PROTECT-THE-LEAD retreat term: when ahead+connected, reward result tiles
+    // FARther (Manhattan, capped) from the nearest foe so the bot backs off and
+    // preserves its winning development lead instead of getting cornered.
+    let retreat = 0;
+    if (protectLead && foeTileIdx >= 0) {
+      const fx = foeTileIdx % MAP_COLS;
+      const fy = (foeTileIdx - fx) / MAP_COLS;
+      retreat = Math.min(Math.abs(rx - fx) + Math.abs(ry - fy), RETREAT_CAP);
+    }
     return (
       W_RESCUE * rescue +
       wAttack * pressure +
       W_ECON * econ +
       W_GROWTH * growth +
-      W_POSITION * pos
+      W_POSITION * pos +
+      W_RETREAT * retreat
     );
   }
 
@@ -1542,6 +1563,7 @@ export class BotController {
     // aggressionWeight (same foeTiles, same bfsFirstStep, same cap 40).
     const foeTilesNow = this.foeTiles(state, slot, myTeam);
     let foeDist = 40;
+    let nearestFoeTileIdx = -1;
     if (foeTilesNow.size > 0) {
       const foeHit = bfsFirstStep(
         state,
@@ -1550,8 +1572,37 @@ export class BotController {
         (x, y) => foeTilesNow.has(idx(x, y)),
         openPassable(state),
       );
-      foeDist = foeHit === null ? 40 : Math.min(40, foeHit.dist);
+      if (foeHit !== null) {
+        foeDist = Math.min(40, foeHit.dist);
+        nearestFoeTileIdx = idx(foeHit.target[0], foeHit.target[1]);
+      }
     }
+
+    // PROTECT-THE-LEAD (v3, classic): when CONNECTED to a foe (foeDist <
+    // cautionDist) and we are AHEAD on total pickups, the leaf reward adds a pull
+    // AWAY from that foe so we don't get cornered/killed sitting on a winning
+    // development lead (an aggressive engage loses to v2's wall-off on classic —
+    // the winning play is out-develop then DON'T die). Pickup score is fire +
+    // cannon + speed-items; start offsets cancel in the my-vs-foe comparison, so
+    // raw stats suffice. Uses full information (the foe's exact stats are visible).
+    const myPickups =
+      myPlayer.fire + myPlayer.cannon + Math.trunc(myPlayer.speedBonusTenths / 4);
+    let nearestFoePickups = 0;
+    if (nearestFoeTileIdx >= 0) {
+      for (const p of state.players) {
+        if (p.slot === slot || p.team === myTeam || !p.alive || p.trapped) continue;
+        if (idx(tileOf(p.posX), tileOf(p.posY)) === nearestFoeTileIdx) {
+          nearestFoePickups =
+            p.fire + p.cannon + Math.trunc(p.speedBonusTenths / 4);
+          break;
+        }
+      }
+    }
+    const protectLead =
+      profile.protectLead &&
+      foeDist < PROTECT_LEAD_DIST &&
+      nearestFoeTileIdx >= 0 &&
+      myPickups > nearestFoePickups;
 
     // CLOSE-QUARTERS ENGAGE OVERRIDE. The grow-vs-fight choice is normally
     // governed by readiness (devFactor). When a foe is within engage distance,
@@ -1850,6 +1901,8 @@ export class BotController {
             growthDist,
             effDevFactor,
             inPlaceBricksForGrowth,
+            protectLead,
+            nearestFoeTileIdx,
           );
           rewardCache.set(key, v);
           return v;

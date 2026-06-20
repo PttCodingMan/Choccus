@@ -32,7 +32,10 @@ Monorepo：npm workspaces = `client` + `tools/sim-runner`；Python relay 在 `se
 
 | 指令 | 用途 |
 | --- | --- |
-| `npm run matrix-bench` | 8-agent（v1×4 + v2×4）1v1 勝率矩陣，印每圖 rank-1 冠軍 |
+| `npm run v3-bench -- --workers=8 --repeats=150` | **v3 權威評估**：v3 對 v2 的 1v1 勝率＋80% 門檻（平行化、CRN、平手算 0.5）。`--map=classic --v2=aggressor` 為快速單圖調參迴圈 |
+| `npm run v2-rank -- --map=classic` | v2 內部 1v1 排名，找該圖最強 v2（gate 目標；兩圖皆 aggressor） |
+| `npm run v3-diag` / `npm run v3-trace` | v3 機制診斷（道具差/死亡/擊殺）、逐時農田軌跡 |
+| `npm run matrix-bench` | 8-agent（v1×4 + v2×4）1v1 矩陣（v1 vs v2 歷史） |
 | `npm run version-bench` | 活 bot vs 凍結前一版，4-bot FFA，兩圖，看 ΔWinRate / ΔAvgRank |
 | `npm run replay -- fixtures/<f>.json [--jsonl]` | 跑 replay，逐 tick 印 `tick,hashHex` |
 | `npm run gen-fixtures` / `npm run update-golden` | 重產 fixtures / 故意改 sim 後重 pin `fixtures/golden.json` |
@@ -51,7 +54,7 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 
 **Server relay（`server/`）**：`main.py`＝dev relay（純 ws）、`serve.py`＝production（HTTP static + ws）。`relay/`：`RelayServer` / `TickCoordinator`（收齊輸入才放行該 tick；斷線 slot 補 neutral ghost）/ `Lobby` / `Room`。wire = 1-byte `MsgType` + MessagePack（id 定義在 `shared/protocol.ts`，Python 端手動鏡像）。relay **只中繼輸入、不跑 sim**。
 
-**AI 版本制（`client/src/ai/`）**：每個 `ai/vN/` 是獨立、可並存的決策碼快照——**版本本身就是持久化機制，無另存 frozen baseline**（`baselines/` 已移除）。一律透過 `ai/index.ts` 的 version-agnostic factory 取用，呼叫端（`main.ts`、sim-runner）**絕不**直接 import 某 version 資料夾。每圖預設 bot ＝ matrix-bench rank-1 冠軍，定義在 `ai/mapChampions.ts`。完整版本狀態 / 強度 / 評估流程見 **`docs/ai-versions.md`**。
+**AI 版本制（`client/src/ai/`）**：每個 `ai/vN/` 是獨立、可並存的決策碼快照——**版本本身就是持久化機制，無另存 frozen baseline**（`baselines/` 已移除）。一律透過 `ai/index.ts` 的 version-agnostic factory 取用，呼叫端（`main.ts`、sim-runner）**絕不**直接 import 某 version 資料夾。每圖預設 bot ＝該圖最強 v3 archetype（`v3-bench`），定義在 `ai/mapChampions.ts`。完整版本狀態 / 強度 / 評估流程見 **`docs/ai-versions.md`**。
 
 ## 一、核心玩法
 
@@ -158,6 +161,8 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 | **Turtle（龜縮）** | 3 | 0.15 | 6 | 0.3 | 極少放彈、要求最長逃生路：靠拖垮對手而非擊殺 | 封閉圖強／開放圖弱 |
 | **Gambler（賭徒）** | 12 | 0.9 | 4 | 1.3 | 反應遲鈍、常失誤、25% 機率盲放無逃生路（`recklessBombChance:0.25`）：高變異 boom-or-bust | 開放圖強／封閉圖弱 |
 
+> 上表為 v1/v2 的 archetype。**v3 移除 Turtle/Gambler**（評估皆贏不了 Aggressor/ChaosV），保留 Aggressor/ChaosV，新增 **Tempering/調溫**（連通性教條最純表現：孤立發育到完成、連通後封路收割）與 **Farmer/農夫**（低 aggression 純發育，實測偏弱）。v3 各圖最強：classic = Aggressor、pirate = Tempering。
+>
 > 強度依 5 支自打 tournament（classic + pirate 各 240 場）。原 **Hunter**（平衡 all-rounder，兩圖皆偏弱）已移除（重構前的舊 AI 已棄用、不保留）。
 
 #### AI 版本制（權威說明見 `docs/ai-versions.md`）
@@ -165,5 +170,6 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 每個 `client/src/ai/v<N>/` 是獨立、可並存的決策碼快照——**版本本身就是持久化機制**，要演進就複製成下一版（`v3/`…）原地演進，不在舊版改、也**不另存 frozen baseline**（先前的 `tools/sim-runner/baselines/` 已移除）。各版的 `AI_VERSION` 在自己的 `v<N>/version.ts`；統一從 `ai/index.ts` 的 version-agnostic factory 取用。
 
 - **v1**（凍結 baseline，`client/src/ai/v1/`）＝貪婪 1-ply 單層加權評分（不前瞻）。
-- **v2**（最新 / live，`AI_VERSION = 2`，`client/src/ai/v2/`）＝在 v1 評分上加 **depth-4 forward-search maximin**（3 個悲觀場景）。引擎在 `v2/core/`（`forwardSearch` / `scenarios` / `commitment`，**map-agnostic**），每張地圖的策略旋鈕收斂成一個 `MapProfile`（`v2/{classic,pirate}/MapProfile.ts`，介面在 `v2/MapProfile.ts`），`BotController` 依 `SimState.mapKind` 派發。仍是**同一版**，classic/pirate 只是同版內依地圖派發的兩組 profile。
-- **不做逐 tick golden hash 鎖 AI**：回歸保障由 `determinism.test.ts`（決定性）＋ `version-bench`（強弱變化）＋ `matrix-bench`（每圖冠軍）負責。改完活的 AI 後在 `tools/sim-runner/` 跑 `npm run version-bench`（活 bot vs 凍結前一版）與 `npm run matrix-bench`（v1×4 + v2×4 的 1v1 勝率矩陣 → 每圖 rank-1）。
+- **v2**（凍結，`AI_VERSION = 2`，`client/src/ai/v2/`）＝在 v1 評分上加 **depth-4 forward-search maximin**（3 個悲觀場景）。引擎在 `v2/core/`＋每圖 `MapProfile`，`BotController` 依 `SimState.mapKind` 派發。
+- **v3**（**最新 / live**，`AI_VERSION = 3`，`client/src/ai/v3/`）＝由 v2 原封複製後演進（v2 不動）。核心是**連通性教條**（孤立＝無開放路徑到任何敵人時農到完成，連通後交戰）＋四個關鍵改進：①修掉 v2 的「道具 Manhattan 磁鐵」bug（看得到拿不到的道具讓 bot 卡死不農——最大單一突破）②道具優先 cannon/speed 過 fire ③近距才完整保命（`survEnough` 依敵人距離切換）④多彈叢集農田（`multiBombFarm`，撤退時用多餘炮數連放、每顆過閘門）⑤保住領先撤退（`protectLead`，classic：連通且道具領先時遠離敵人，別被封路炸死）。**結果：對 v2 最強策略（兩圖皆 aggressor）勝率 classic 81.7% / pirate 80.8%，達成 ≥80% goal。** 詳見 `docs/ai-versions.md`。
+- **不做逐 tick golden hash 鎖 AI**：回歸保障由 `determinism.test.ts`（決定性）＋ `v3-bench`（80% 門檻）＋機制診斷負責。改完活的 AI（v3）後在 `tools/sim-runner/` 跑 `npm run v3-bench`（v3 vs v2，含門檻）＋ `npm test` ＋ `npm run lint`。

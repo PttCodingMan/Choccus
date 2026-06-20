@@ -69,6 +69,9 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // bot farms aggressively). Tuned for the closed lattice where v2-ChaosV's
   // wall-off is the main death cause; see the sweep in tools/sim-runner.
   cautionDist: 6,
+  // Once connected AND ahead on pickups, back away from the foe to preserve the
+  // development lead (engaging the wall-off loses on classic).
+  protectLead: true,
   // Pack brick clusters with parallel bombs (spare cannons) while retreating —
   // the closed lattice is a development race, so doubling farming throughput is
   // the biggest remaining lever. Each extra bomb passes the full refuge gate.

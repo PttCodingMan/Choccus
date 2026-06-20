@@ -28,7 +28,7 @@
  * — and every printed cell, footnote, GATE and OVERALL line — is byte-identical
  * regardless of worker count.
  */
-import { Worker } from 'node:worker_threads';
+import { Worker, isMainThread } from 'node:worker_threads';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -52,15 +52,21 @@ export const DUEL_N = 2;
  * today it is the v2-copied set. The "strongest v3" headline picks the best row
  * per map automatically, so adding archetypes here just widens the search.
  */
-const V3_ARCHES: readonly string[] = ['aggressor', 'chaosv', 'tempering'];
+const V3_ARCHES: readonly string[] = ['aggressor', 'chaosv', 'tempering', 'farmer'];
 
 /** v2 archetypes to test against (cols). v2 is frozen; these are its proven set. */
 const V2_ARCHES: readonly string[] = ['aggressor', 'chaosv'];
 
-/** The strongest v2 archetype per map (the >=80% gate target). See docs. */
+/**
+ * The strongest v2 archetype per map (the >=80% gate target). Determined by a v2
+ * INTERNAL 1v1 round-robin (see src/v2-rank.ts): on BOTH maps the strongest v2 is
+ * aggressor (classic 56% vs chaosv/turtle 51.5%; pirate aggressor too). The docs'
+ * "classic champion = v2-chaosv" was from the mixed v1+v2 8-agent matrix, not the
+ * v2-internal ranking the goal's "v2's strongest strategy" refers to.
+ */
 const V2_STRONGEST: Readonly<Record<MapKind, string>> = {
   pirate: 'aggressor',
-  classic: 'chaosv',
+  classic: 'aggressor',
 };
 
 /** The >=80% pass gate. */
@@ -74,6 +80,9 @@ interface Options {
   v3: readonly string[];
   v2: readonly string[];
   workers: number;
+  /** Which maps to run (default both). `--map=classic` runs ONLY classic — a
+   *  fast focused loop for tuning classic without re-running the passing pirate. */
+  maps: readonly MapKind[];
 }
 
 function parseArgs(argv: string[]): Options {
@@ -81,6 +90,7 @@ function parseArgs(argv: string[]): Options {
   let v3: readonly string[] = V3_ARCHES;
   let v2: readonly string[] = V2_ARCHES;
   let workers = os.cpus().length;
+  let maps: readonly MapKind[] = MAPS;
   for (const arg of argv) {
     if (arg.startsWith('--repeats=')) repeats = Number(arg.slice('--repeats='.length));
     else if (arg.startsWith('--v3=')) {
@@ -89,10 +99,14 @@ function parseArgs(argv: string[]): Options {
       v2 = arg.slice('--v2='.length).split(',').map((s) => s.trim()).filter(Boolean);
     } else if (arg.startsWith('--workers=')) {
       workers = Number(arg.slice('--workers='.length));
+    } else if (arg.startsWith('--map=')) {
+      const want = arg.slice('--map='.length).split(',').map((s) => s.trim());
+      maps = MAPS.filter((m) => want.includes(m));
     }
   }
   workers = Math.max(1, Math.floor(workers));
-  return { repeats, v3, v2, workers };
+  if (maps.length === 0) maps = MAPS;
+  return { repeats, v3, v2, workers, maps };
 }
 
 /**
@@ -156,8 +170,10 @@ export interface GameResult {
 export function buildGameList(opts: Options): Game[] {
   const games: Game[] = [];
   let gameId = 0;
-  for (let m = 0; m < MAPS.length; m++) {
-    const map = MAPS[m]!;
+  for (const map of opts.maps) {
+    // Global index keeps the CRN seed + cell storage stable regardless of which
+    // maps are selected (so classic's seeds are identical with or without pirate).
+    const m = MAPS.indexOf(map);
     for (let r = 0; r < opts.repeats; r++) {
       const seed = scenarioSeed(m, r);
       for (let ai = 0; ai < opts.v3.length; ai++) {
@@ -370,7 +386,7 @@ async function main(): Promise<number> {
   console.log('v3-vs-v2 head-to-head bench (1v1, CRN-seeded, draws=0.5).');
   console.log(`v3 archetypes (rows): ${opts.v3.join(', ')}`);
   console.log(`v2 archetypes (cols): ${opts.v2.join(', ')}`);
-  console.log(`repeats=${opts.repeats}, maps=${MAPS.join(', ')}, gate=${(GATE * 100).toFixed(0)}%.`);
+  console.log(`repeats=${opts.repeats}, maps=${opts.maps.join(', ')}, gate=${(GATE * 100).toFixed(0)}%.`);
   console.log('workers=' + opts.workers + ' (result is identical regardless of worker count).');
 
   const games = buildGameList(opts);
@@ -378,8 +394,8 @@ async function main(): Promise<number> {
   const byMap = aggregate(results, opts);
 
   let allPass = true;
-  for (let m = 0; m < MAPS.length; m++) {
-    const map = MAPS[m]!;
+  for (const map of opts.maps) {
+    const m = MAPS.indexOf(map);
     const { best } = printMap(map, byMap[m]!, opts);
     if (best < GATE) allPass = false;
   }
@@ -389,10 +405,15 @@ async function main(): Promise<number> {
   return 0;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (e: unknown) => {
-    console.error(e);
-    process.exit(1);
-  },
-);
+// Only the MAIN thread runs the bench. Worker threads import this module solely
+// for `runGame`/`Game`/`GameResult` (see v3-bench-worker.ts); without this guard
+// each worker would re-run main() and recursively spawn its own worker pool.
+if (isMainThread) {
+  main().then(
+    (code) => process.exit(code),
+    (e: unknown) => {
+      console.error(e);
+      process.exit(1);
+    },
+  );
+}
