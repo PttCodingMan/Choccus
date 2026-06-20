@@ -15,9 +15,11 @@
  *  5. item pickups (item-array order; first player in array order wins);
  *  6. shells: rescue, then timers → elimination;
  *  7. age & cull explosion cells;
- *  8. win check → maybe phase = OVER (always PvP: OVER once <=1 distinct team
+ *  8. sudden death: harden this tick's spiral tiles, crush players caught on
+ *     them (late-match arena shrink — see SuddenDeath.ts; prng-free);
+ *  9. win check → maybe phase = OVER (always PvP: OVER once <=1 distinct team
  *     has an alive player);
- *  9. recompute stateHash, tick + 1.
+ * 10. recompute stateHash, tick + 1.
  *
  * PRNG draw order across a whole tick: step 3 (drop rolls) only.
  * `createInitialState` draws: map generation ONLY (no per-entity spawn draws).
@@ -49,6 +51,7 @@ import {
   tileOf,
 } from './Player';
 import { stepShells, trapPlayer } from './Shell';
+import { stepSuddenDeath } from './SuddenDeath';
 
 export type { SimParams } from './Player';
 
@@ -240,12 +243,18 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
   for (const c of explosions) c.ttlTicks -= 1;
   explosions = explosions.filter((c) => c.ttlTicks > 0);
 
-  // (8) win check (always PvP / last-team-standing). The resulting phase IS
+  // (8) sudden death: late-match arena shrink. Harden this (next) tick's spiral
+  // tiles into HARD bricks and crush any player caught on them. Prng-free and a
+  // pure function of the tick (see SuddenDeath.ts); the hardened tiles are part
+  // of the hashed grid, so every client closes the arena byte-identically.
+  const nextTick = state.tick + 1;
+  stepSuddenDeath(grid, players, nextTick);
+
+  // (9) win check (always PvP / last-team-standing). The resulting phase IS
   // hashed. OVER once at most one distinct team still has an alive player
   // (a single survivor wins; everyone gone is also OVER), OR once the hard
   // match time cap is hit — the surviving teams are then resolved outside the
   // sim by most-survivors → item tiebreak → draw (see Outcome.ts).
-  const nextTick = state.tick + 1;
   const aliveTeams = new Set<number>();
   for (const p of players) if (p.alive) aliveTeams.add(p.team);
   const phase =
@@ -253,7 +262,7 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
       ? GamePhase.OVER
       : GamePhase.PLAYING;
 
-  // (9) assemble + hash.
+  // (10) assemble + hash.
   const next: SimState = {
     tick: nextTick,
     phase,

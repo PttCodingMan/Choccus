@@ -121,6 +121,7 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 | 困住存活時間 | **5.0 秒**（被糖殼凝固後 5 秒內隊友碰到解救，否則破殼淘汰） |
 | 重生保護 | 4.0 秒（重生模式才有；涵蓋出生瞬間） |
 | 對局時間上限 | **3.0 分鐘**（180 秒 = 10800 ticks；打滿仍多隊存活 → sim 強制結束，依「最多存活人數 → 道具發育數」判勝，全平手算平手） |
+| Sudden death（突然死亡） | **120 秒（7200 ticks）起**，每 25 ticks 由外往內螺旋把一格內場變硬磚、踩在上面者**直接淘汰**（凝固包死、不可救）；~179 秒收滿全場 → 比賽不可能拖到上限還多隊存活。消滅 farm-to-timeout（`sim/SuddenDeath.ts`，純整數決定性、不抽亂數） |
 | 對齊滑行 | 速度與移動速度共用（轉角輔助沿垂直軸全速滑入） |
 
 ### 玩家初始值與上限
@@ -164,7 +165,7 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 
 > 上表為 v1/v2 的 archetype。**v3（2026-06-20 限時獵殺重做）改成刻意非遞移的 7-archetype roster**：三環 **獵殺流/Hunter ＞ 養成流/Farmer ＞ 控場流/Zoner ＞ Hunter**＋邊緣專家 **逃跑流/Runner**（純存活）、**陷阱流/Trapper**（vChain 封路誘殺，由舊 ChaosV 合併，**現各圖最強**）、**反應流/Reactive**（鏡像反制）＋池外裁判 **隨機擾動/Noise**（強度地板，不進 gate）。舊 Aggressor→Hunter、ChaosV→Trapper，Tempering 移除。旋鈕＝`v3/BotConfig.ts` 的 `pureHunt/fleeFoe/zoneStandoff/mirror/noise`。
 >
-> **gate 改為物理可達的 KILL-EDGE**（v3 限時擊殺數 ≥ v2 擊殺 v3 數，每圖；非純擊殺 80%——80% 經證實是 3 秒引信＋等速逃逸的物理天花板）。登月 forced-kill（pincer/finisher/forced-trap）把 classic 從 10.8%→25%。詳見 `docs/ai-versions.md`。
+> **gate ＝物理公平的 KILL-EDGE**（v3 限時擊殺數 ≥ v2 擊殺 v3 數，每圖）。先前「純擊殺 80% 是物理天花板」的前提是「永遠有地方等速逃逸」；**2026-06-20 新增 sudden-death 縮圈機制（`sim/SuddenDeath.ts`）把這前提拿掉後，限時擊殺率衝到 classic 69.2% / pirate 81.7%、超時率兩圖 0%**，KILL-EDGE 仍 PASS。詳見 `docs/ai-versions.md`。
 
 #### AI 版本制（權威說明見 `docs/ai-versions.md`）
 
@@ -172,5 +173,5 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 
 - **v1**（凍結 baseline，`client/src/ai/v1/`）＝貪婪 1-ply 單層加權評分（不前瞻）。
 - **v2**（凍結，`AI_VERSION = 2`，`client/src/ai/v2/`）＝在 v1 評分上加 **depth-4 forward-search maximin**（3 個悲觀場景）。引擎在 `v2/core/`＋每圖 `MapProfile`，`BotController` 依 `SimState.mapKind` 派發。
-- **v3**（**最新 / live**，`AI_VERSION = 3`，`client/src/ai/v3/`）＝由 v2 原封複製後演進（v2 不動）。核心是**連通性教條**（孤立＝無開放路徑到任何敵人時農到完成，連通後交戰）＋四個關鍵改進：①修掉 v2 的「道具 Manhattan 磁鐵」bug（看得到拿不到的道具讓 bot 卡死不農——最大單一突破）②道具優先 cannon/speed 過 fire ③近距才完整保命（`survEnough` 依敵人距離切換）④多彈叢集農田（`multiBombFarm`，撤退時用多餘炮數連放、每顆過閘門）⑤保住領先撤退（`protectLead`，classic：連通且道具領先時遠離敵人，別被封路炸死）。**舊結果（舊計分，超時靠道具 tiebreak）：classic 81.7% / pirate 80.8%。但 2026-06-20 勝負規則改為「超時＝挑戰者判輸」後，v3 在兩圖皆崩到個位數～10%（classic 最佳 10.8% / pirate 2.5%，皆 FAIL）——因為它幾乎從不在 3 分鐘內擊殺 v2，只靠出農拖到超時。連通性教條／發育策略正是新規則所否定的，goal 需以「限時擊殺」重新設計。** 詳見 `docs/ai-versions.md`。
+- **v3**（**最新 / live**，`AI_VERSION = 3`，`client/src/ai/v3/`）＝由 v2 原封複製後演進（v2 不動）。核心是**連通性教條**（孤立＝無開放路徑到任何敵人時農到完成，連通後交戰）＋四個關鍵改進：①修掉 v2 的「道具 Manhattan 磁鐵」bug（看得到拿不到的道具讓 bot 卡死不農——最大單一突破）②道具優先 cannon/speed 過 fire ③近距才完整保命（`survEnough` 依敵人距離切換）④多彈叢集農田（`multiBombFarm`，撤退時用多餘炮數連放、每顆過閘門）⑤保住領先撤退（`protectLead`，classic：連通且道具領先時遠離敵人，別被封路炸死）。**演進史：舊計分（超時靠道具 tiebreak）classic 81.7% / pirate 80.8% → 2026-06-20「超時＝挑戰者判輸」後崩到 classic 10.8% / pirate 2.5%（幾乎全超時、皆 FAIL）→ 同日新增 sudden-death 縮圈（`sim/SuddenDeath.ts`）消滅 farm-to-timeout，回升到 classic 69.2%（best=farmer）/ pirate 81.7%（best=zoner）、超時率 0%，KILL-EDGE PASS。** 詳見 `docs/ai-versions.md`。
 - **不做逐 tick golden hash 鎖 AI**：回歸保障由 `determinism.test.ts`（決定性）＋ `v3-bench`（80% 門檻）＋機制診斷負責。改完活的 AI（v3）後在 `tools/sim-runner/` 跑 `npm run v3-bench`（v3 vs v2，含門檻）＋ `npm test` ＋ `npm run lint`。
