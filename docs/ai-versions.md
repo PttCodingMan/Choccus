@@ -21,6 +21,20 @@
 
 > 歷史脈絡：baseline（新規則、登月前）classic 10.8% / pirate 2.5%，幾乎全超時。登月 forced-kill 機制把 classic 拉到 25%（且半數對局真的以擊殺收場）。「各圖最強 v2」仍由 `v2-rank` 判定＝aggressor。
 
+### 公平對決（`fair-duel`，遊戲真實判定）：v3 ✅ 大幅領先 v2 ~72–78%
+
+> 上面的「限時擊殺率 ~25%」是**不公平的挑戰者門檻**（超時＝v3 直接判輸）造出來的，**不是 v3 的真實強度**。用遊戲真正的判定（`sim/Outcome.ts`：最後存活 → 存活人數 → 道具發育 tiebreak → 平手，雙方同規則）跑 `fair-duel`，v3 反而大幅領先——因為 v3 **同時擊殺更多、也發育輾壓 v2**：
+
+| v3 策略 | classic v3 勝 | pirate v3 勝 | 特性 |
+| --- | --- | --- | --- |
+| **trapper 陷阱流（champion）** | **70%** | 75% | 又殺又發育，最均衡（classic 50% 對局真擊殺） |
+| farmer 養成流 | 65% | **82.5%** | 純發育輾壓，開放圖 tiebreak 最強 |
+| zoner 控場流 | 60% | 80% | 控場壓縮、偏發育 |
+| runner 逃跑流 | 65% | 57.5% | 純苟拖 tiebreak |
+| hunter 獵殺流 / reactive 反應流 | 0% | 0% | 不農、發育掛蛋 → 殺不死人時 tiebreak 必輸（roster 弱角，定位是自打非遞移環） |
+
+> （每個 vs v2-aggressor，每圖 40 場、CRN、輪流先手。）**一句話：限時擊殺賽 v3 吃虧（~25%），公平賽 v3 大贏（~72–78%，champion=trapper）。** 工具：`npx tsx src/fair-duel.ts --v3=trapper --v2=aggressor`。
+
 ### （歷史）v2 目標：兩圖 matrix-bench rank-1 都是 v2 — 已達成（2026-06-19）
 > pirate v2-Aggressor 69.3%、classic v2-Chaosv 66.4%（co-leader v2-Aggressor 60.7%）。
 > classic 由 `deferredBombDiscountPct=100` 治好 defer-forever 退化（見第三、四節）。
