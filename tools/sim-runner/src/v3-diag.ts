@@ -24,7 +24,7 @@ import { type PlayerState } from '../../../client/src/sim/Player';
 import { tick, createInitialState, type SimState } from '../../../client/src/sim/Sim';
 import { BASE, type MapKind } from './bench-utils';
 
-const MAX_TICKS = 3600;
+const MAX_TICKS = 10800; // 3 min @ 60 Hz (= shared MATCH_MAX_TICKS)
 
 function itemScore(p: PlayerState): number {
   return (

@@ -26,7 +26,7 @@ import { resolveStrategy as resolveV3 } from '../../../client/src/ai/v3/Strategi
 import type { MapProfile } from '../../../client/src/ai/v3/MapProfile';
 import { BASE } from './bench-utils';
 
-const MAX_TICKS = 3600;
+const MAX_TICKS = 10800; // 3 min @ 60 Hz (= shared MATCH_MAX_TICKS)
 
 function itemScore(p: PlayerState): number {
   return (

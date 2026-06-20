@@ -18,7 +18,7 @@ import { DIRECTION_ORDER } from '../../../client/src/sim/InputBuffer';
 import { tick, createInitialState, type SimState } from '../../../client/src/sim/Sim';
 import { BASE, type MapKind } from './bench-utils';
 
-const MAX_TICKS = 3600;
+const MAX_TICKS = 10800; // 3 min @ 60 Hz (= shared MATCH_MAX_TICKS)
 
 function softCount(map: Uint8Array): number {
   let s = 0;
@@ -73,7 +73,7 @@ function main(): number {
   let bomb = 0, stay = 0, move = 0, noInput = 0;
   let bombsPlaced = 0;
   let isolatedTicks = 0;
-  const checkpoints = [600, 1200, 1800, 2400, 3000, 3600];
+  const checkpoints = [1800, 3600, 5400, 7200, 9000, 10800];
   let cpI = 0;
 
   console.log(`v3-trace: v3-${v3Arch}(slot0) vs v2-${v2Arch}(slot1), map=${map}, seed=${seed}.`);

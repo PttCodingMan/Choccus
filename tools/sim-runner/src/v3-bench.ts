@@ -10,10 +10,13 @@
  * R repeats, under common-random-numbers (CRN) seeding, and prints a per-map
  * win-share matrix plus a PASS/FAIL on the >=80% gate.
  *
- * Win accounting matches the official matrix bench: a clean last-bot-standing or
- * tick-cap item-progress tiebreak is a decisive win; a genuine draw counts 0.5 to
- * each side. (classic 1v1s rarely end in a kill, so the item tiebreak — total
- * fire+cannon+speed pickups — usually decides; pirate has real kills.)
+ * Win accounting (the challenger carries the burden of proof): a clean
+ * last-bot-standing finish decides normally, BUT any match dragged to the tick
+ * cap (3 min @ 60 Hz) with both bots alive is judged a LOSS for the challenger
+ * (v3) — a new version only earns a win by actually killing the frozen baseline
+ * within the time limit, never by out-farming it to a timeout. The only 0.5 is a
+ * same-tick mutual KO (a genuine draw). (classic 1v1s rarely end in a kill, so
+ * expect most classic cells to be timeout losses now; pirate has real kills.)
  *
  * CRN: the seed for a given (map, repeat) is a pure function of (map, repeat)
  * only, shared across BOTH seatings and ALL pairings of that (map, repeat) — so
@@ -122,7 +125,8 @@ interface Cell {
   v3Wins: number;
   v2Wins: number;
   draws: number;
-  tiebreaks: number;
+  /** Games the challenger (v3) lost by dragging to the tick cap. */
+  timeoutLosses: number;
   total: number;
 }
 
@@ -157,7 +161,8 @@ export interface GameResult {
   /** Agent index of the sole/tiebreak winner, or null for a draw. */
   winnerAgent: number | null;
   draw: boolean;
-  tiebreak: boolean;
+  /** Match dragged to the tick cap with both alive ⇒ challenger judged to lose. */
+  timedOut: boolean;
 }
 
 /**
@@ -211,7 +216,7 @@ export function runGame(game: Game): GameResult {
     bi: game.bi,
     winnerAgent: rec.winnerAgent,
     draw: rec.draw,
-    tiebreak: rec.tiebreak,
+    timedOut: rec.timedOut,
   };
 }
 
@@ -315,16 +320,24 @@ function v3Share(c: Cell): number {
 function aggregate(results: GameResult[], opts: Options): Cell[][][] {
   const byMap: Cell[][][] = MAPS.map(() =>
     opts.v3.map(() =>
-      opts.v2.map(() => ({ v3Wins: 0, v2Wins: 0, draws: 0, tiebreaks: 0, total: 0 })),
+      opts.v2.map(() => ({ v3Wins: 0, v2Wins: 0, draws: 0, timeoutLosses: 0, total: 0 })),
     ),
   );
   for (const r of results) {
     const cell = byMap[r.mapIndex]![r.ai]![r.bi]!;
     cell.total += 1;
-    if (r.winnerAgent === null) cell.draws += 1;
-    else if (r.winnerAgent === 0) cell.v3Wins += 1;
-    else cell.v2Wins += 1;
-    if (r.tiebreak) cell.tiebreaks += 1;
+    if (r.timedOut) {
+      // Dragged to the tick cap ⇒ the challenger (v3) is judged to lose,
+      // regardless of who had more items: a full v2 win for this cell.
+      cell.v2Wins += 1;
+      cell.timeoutLosses += 1;
+    } else if (r.winnerAgent === null) {
+      cell.draws += 1; // same-tick mutual KO: a genuine draw (0.5 each).
+    } else if (r.winnerAgent === 0) {
+      cell.v3Wins += 1;
+    } else {
+      cell.v2Wins += 1;
+    }
   }
   return byMap;
 }
@@ -341,8 +354,8 @@ function printMap(map: MapKind, cells: Cell[][], opts: Options): { best: number;
   console.log(`================= MAP: ${map} =================`);
   const totalGames = cells[0]?.[0]?.total ?? 0;
   console.log(
-    `v3 win% vs v2 (rows=v3, cols=v2; draws=0.5; ${totalGames} games/cell, ` +
-      `${opts.repeats} repeats × 2 seatings):`,
+    `v3 win% vs v2 (rows=v3, cols=v2; timeout=challenger loss, mutual-KO draw=0.5; ` +
+      `${totalGames} games/cell, ${opts.repeats} repeats × 2 seatings):`,
   );
   console.log(
     padR('', labelW) + '  ' + colLabels.map((h, j) => padL(h, colW[j]!)).join('  '),
@@ -354,11 +367,11 @@ function printMap(map: MapKind, cells: Cell[][], opts: Options): { best: number;
     console.log(`${padR(rowLabels[i]!, labelW)}  ${row}`);
   }
 
-  // Draw/tiebreak footnote.
+  // Timeout-loss / draw footnote.
   let draws = 0;
-  let tbs = 0;
-  for (const row of cells) for (const c of row) { draws += c.draws; tbs += c.tiebreaks; }
-  console.log(`  (${tbs} games tiebreak-decided, ${draws} genuine draws)`);
+  let timeouts = 0;
+  for (const row of cells) for (const c of row) { draws += c.draws; timeouts += c.timeoutLosses; }
+  console.log(`  (${timeouts} games the challenger lost on timeout, ${draws} mutual-KO draws)`);
 
   // The gate: BEST v3 archetype vs the STRONGEST v2 archetype on this map.
   const strongest = V2_STRONGEST[map];
@@ -383,7 +396,7 @@ function printMap(map: MapKind, cells: Cell[][], opts: Options): { best: number;
 
 async function main(): Promise<number> {
   const opts = parseArgs(process.argv.slice(2));
-  console.log('v3-vs-v2 head-to-head bench (1v1, CRN-seeded, draws=0.5).');
+  console.log('v3-vs-v2 head-to-head bench (1v1, CRN-seeded; timeout=challenger loss).');
   console.log(`v3 archetypes (rows): ${opts.v3.join(', ')}`);
   console.log(`v2 archetypes (cols): ${opts.v2.join(', ')}`);
   console.log(`repeats=${opts.repeats}, maps=${opts.maps.join(', ')}, gate=${(GATE * 100).toFixed(0)}%.`);
