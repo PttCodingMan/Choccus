@@ -471,6 +471,12 @@ export class BotController {
    * to the max so the bot accumulates a multi-bomb surplus for corner seals. */
   private curDevTargetCannon = DEV_TARGET_CANNON;
 
+  /** Effective FIRE development target for THIS decision (per-map
+   * `MapProfile.devTargetFire`); read by developmentFactor and the item-priority
+   * threshold. Classic raises it so the bot grows a longer blast cross — stronger
+   * seals / corner walls that cover more exits and reach fleeing foes. */
+  private curDevTargetFire = DEV_TARGET_FIRE;
+
   /** Whether CORNER-FINISH is active for THIS decision (per-map
    * `MapProfile.cornerFinish`): when the nearest foe is cornered (free space
    * collapsed) the Zoner ring collapses so the bot dives in to seal it. */
@@ -1431,13 +1437,14 @@ export class BotController {
     // max so the bot keeps farming to a cannon SURPLUS — the fuel for offensive
     // multi-bomb corner seals — instead of declaring itself "developed" at cannon 3.
     const targetCannon = this.curDevTargetCannon;
+    const targetFire = this.curDevTargetFire;
     const targetSpan =
-      DEV_TARGET_FIRE -
+      targetFire -
       PLAYER_START_FIRE +
       (targetCannon - PLAYER_START_CANNON);
     if (targetSpan <= 0) return 0;
     const got =
-      Math.max(0, Math.min(DEV_TARGET_FIRE, fire) - PLAYER_START_FIRE) +
+      Math.max(0, Math.min(targetFire, fire) - PLAYER_START_FIRE) +
       Math.max(0, Math.min(targetCannon, cannon) - PLAYER_START_CANNON);
     // 100 when got = 0 (just spawned), 0 when got >= targetSpan (developed).
     return Math.max(0, Math.min(100, 100 - Math.floor((got * 100) / targetSpan)));
@@ -2222,6 +2229,7 @@ export class BotController {
         : (this.tuning.zoneStandoff ?? 0);
     this.curShrinkWeight = profile.shrinkSurvivalWeight;
     this.curDevTargetCannon = profile.devTargetCannon;
+    this.curDevTargetFire = profile.devTargetFire;
     this.curCornerFinish = profile.cornerFinish;
 
     const huntStart = profile.huntStartTick;
@@ -2421,7 +2429,7 @@ export class BotController {
           ? 3
           : it.kind === ItemKind.SPEED
             ? 3
-            : myPlayer.fire >= DEV_TARGET_FIRE
+            : myPlayer.fire >= this.curDevTargetFire
               ? 1
               : 2; // FIRE
       const sc = pri * 3 - info.dist;

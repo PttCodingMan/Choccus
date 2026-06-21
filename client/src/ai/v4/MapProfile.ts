@@ -191,4 +191,13 @@ export interface MapProfile {
    * false = the ring radius is never overridden by foe mobility.
    */
   readonly cornerFinish: boolean;
+  /**
+   * FIRE development target (blast radius the bot grows toward before declaring
+   * itself developed; also the threshold past which fire pickups are de-prioritised).
+   * Shared default 4 (of max 6). Classic raises it: a longer blast cross makes
+   * seals and corner-walls cover more exits and reach fleeing foes, strengthening
+   * the kill phase. Unlike cannon, fire is far fewer pickups so raising it does not
+   * trigger the over-farming that a higher cannon target did.
+   */
+  readonly devTargetFire: number;
 }

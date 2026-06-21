@@ -92,7 +92,7 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // late-hardening center as the shrink nears so the bot outlasts a near-peer that
   // only reacts to already-hard tiles. This is the main lever to break the classic
   // endgame mirror ties (where knob-tuning the fight itself washed out).
-  shrinkSurvivalWeight: 2,
+  shrinkSurvivalWeight: 4,
   // Cannon dev target left at the mid default: raising it to 5 was measured net
   // NEGATIVE (vs v3:farmer 48%->44% — farming to a full surplus loses the dev race
   // and over-exposes the bot). The cannon surplus alone does NOT produce a corner
@@ -104,4 +104,8 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // Converts the Zoner's herding into actual kills against the kill-phase peers
   // (trapper/farmer) that the shrink pull does not reach.
   cornerFinish: true,
+  // GROW A LONGER BLAST (v4-classic): raise the fire dev target to the max (6) so
+  // the bot builds a longer cross — seals/corner-walls cover more exits and reach
+  // fleeing foes. Few pickups, so no over-farming (unlike the cannon target).
+  devTargetFire: 6,
 });
