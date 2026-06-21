@@ -49,8 +49,10 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   shrinkSurvivalWeight: 6,
   // Mid cannon dev target (shared default) — pirate is byte-unchanged.
   devTargetCannon: 3,
-  // No corner-finish ring collapse on pirate (open map, untouched).
-  cornerFinish: false,
+  // CORNER-FINISH (v4-pirate): port from classic. Open map has few corners so it
+  // fires rarely (only on a genuinely cornered foe, free space <=3), but when a
+  // foe IS boxed it dives to seal — a low-risk additive lever to clear +50.
+  cornerFinish: true,
   // GROW A LONGER BLAST (v4-pirate): port the classic winner — drive the fire dev
   // target to the new max 7 so the bot builds the longest cross (stronger kills /
   // seals on the open map too). Few pickups → no over-farming. Under bench.
