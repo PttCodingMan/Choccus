@@ -42,9 +42,11 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   zoneStandoffTiles: 0,
   // SUDDEN-DEATH SURVIVAL (v4-pirate): the main mirror-breaker here (zoner 50->58
   // at weight 4). Push to 6 — the open-map mirror responded strongly, so a
-  // stronger center pre-position may extend the lead toward +50. Under bench.
-  // (weight 4: zoner 58% | weight 6: zoner 60% — still climbing; probe 8.)
-  shrinkSurvivalWeight: 8,
+  // stronger center pre-position extends the lead. Measured sweet spot: 6.
+  // weight 4: zoner 58 | weight 6: zoner 60, trapper 58 | weight 8: zoner 62 but
+  // trapper 54 (over-centralizing neglects the trapper fight — net wash, less
+  // robust). 6 keeps every top matchup healthy.
+  shrinkSurvivalWeight: 6,
   // Mid cannon dev target (shared default) — pirate is byte-unchanged.
   devTargetCannon: 3,
   // No corner-finish ring collapse on pirate (open map, untouched).
