@@ -14,9 +14,11 @@
  *     so it wins by compression without diving into self-destruction (the side
  *     the shrink rewards).
  *
- * The tuning below is the v3 Zoner verbatim — v4 launches behaviour-identical to
- * v3:zoner, then evolves IN PLACE (first focus: the classic map, the weaker of
- * the two). The shared `BotTuning` knobs live in BotConfig.ts.
+ * v5 keeps this Zoner archetype tuning VERBATIM and evolves on a separate,
+ * orthogonal DEFENSIVE axis instead (per-map MapProfile.entrapWeight +
+ * robust refuge selection in BotController) — escape-route redundancy that
+ * counters follow-up "seal" bombs, the mechanism that capped v4. The shared
+ * `BotTuning` knobs live in BotConfig.ts; the new per-map knob is in MapProfile.ts.
  *
  * Reaction is in ticks at the fixed 60 Hz timestep; the bomb fuse is 180 ticks.
  */
