@@ -159,4 +159,16 @@ export interface MapProfile {
    * sudden-death coin-flip — closing the ring is how the Zoner actually kills.
    */
   readonly zoneStandoffTiles: number;
+  /**
+   * Weight of the SUDDEN-DEATH SURVIVAL pull (0 = off). As the arena shrink nears,
+   * every leaf gains `weight × tileSurvivalRank × proximity%` where the rank is how
+   * LATE that tile hardens in the inward spiral (center last). This makes the bot
+   * drift toward the surviving center BEFORE the wall arrives — the AI otherwise
+   * only sees already-hardened tiles and never anticipates the shrink, so on the
+   * cramped classic map near-peer mirrors coin-flip the shrink endgame. Pirate
+   * keeps it 0 (open map already won; don't perturb it); classic turns it on as
+   * the main lever to break those endgame ties. The hard refuge gate is unchanged
+   * — this only biases WHICH safe tile is preferred, never overrides safety.
+   */
+  readonly shrinkSurvivalWeight: number;
 }

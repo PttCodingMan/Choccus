@@ -43,6 +43,7 @@ import { idx, inBounds } from '../../sim/Map';
 import { dirDX, dirDY, playerSpeedMtPerTick, tileOf } from '../../sim/Player';
 import { bombAt } from '../../sim/Bomb';
 import type { BombState } from '../../sim/Bomb';
+import { SPIRAL_ORDER } from '../../sim/SuddenDeath';
 import {
   FUSE_TICKS,
   MAP_COLS,
@@ -53,6 +54,7 @@ import {
   PLAYER_START_CANNON,
   PLAYER_START_FIRE,
   SPARK_TICKS,
+  SUDDEN_DEATH_START_TICK,
 } from '../../../../shared/constants';
 import { ActionFlags, Direction, ItemKind, TileKind } from '../../../../shared/types';
 import type { BotTuning } from './BotConfig';
@@ -389,6 +391,25 @@ const HUNT_SURV_FLOOR = 4;
 const CENTER_X = Math.floor(MAP_COLS / 2); // 7
 const CENTER_Y = Math.floor(MAP_ROWS / 2); // 6
 
+/**
+ * Per-tile SUDDEN-DEATH SURVIVAL RANK: how LATE a tile hardens in the inward
+ * spiral (sim/SuddenDeath SPIRAL_ORDER) — higher = survives the shrink longer
+ * (the center is last). Border / non-interior tiles get 0 (never standable late).
+ * Pure compile-time constant of the map dimensions; the shrink-survival term
+ * (gated by MapProfile.shrinkSurvivalWeight) pulls toward higher-rank tiles as
+ * the shrink nears, so the bot drifts to the surviving center BEFORE the wall
+ * arrives instead of only reacting once tiles are already hard. */
+const SHRINK_SURVIVAL_RANK: Int32Array = (() => {
+  const rank = new Int32Array(MAP_COLS * MAP_ROWS);
+  for (let i = 0; i < SPIRAL_ORDER.length; i++) {
+    const [x, y] = SPIRAL_ORDER[i]!;
+    rank[idx(x, y)] = i; // 0 = first to harden (outer ring), last = center.
+  }
+  return rank;
+})();
+/** Ticks BEFORE the shrink starts that the survival pull begins ramping in. */
+const SHRINK_LEAD_TICKS = 1800; // ~30 s — drift to center from ~90 s onward.
+
 /** A scored candidate action. */
 interface Candidate {
   /** Direction bit for a move, Direction.NONE for STAY / PLACE_BOMB. */
@@ -437,6 +458,10 @@ export class BotController {
    * own `tuning.zoneStandoff`. Resolved once per decision tick (profile in scope)
    * and read by leafReward (which has no profile param). 0 = not a Zoner. */
   private curZoneStandoff = 0;
+
+  /** Effective shrink-survival pull weight for THIS decision (per-map
+   * `MapProfile.shrinkSurvivalWeight`); 0 = off. Read by leafReward. */
+  private curShrinkWeight = 0;
 
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
@@ -1737,6 +1762,31 @@ export class BotController {
         huntScaled = Math.floor((W_HUNT * approach * huntFactor) / 100);
       }
     }
+    // SUDDEN-DEATH SURVIVAL pull (v4-classic): as the shrink nears, reward tiles
+    // that harden LATE (toward the surviving center) so the bot pre-positions to
+    // outlast a near-peer who only reacts once the wall is already on it. Ramps in
+    // over SHRINK_LEAD_TICKS before the shrink and holds at full after. Off when
+    // the weight is 0 (pirate / non-classic). The hard refuge gate still governs
+    // safety — this only biases WHICH safe tile to prefer.
+    let shrinkScaled = 0;
+    if (this.curShrinkWeight > 0) {
+      const prox =
+        state.tick <= SUDDEN_DEATH_START_TICK - SHRINK_LEAD_TICKS
+          ? 0
+          : Math.min(
+              100,
+              Math.floor(
+                ((state.tick - (SUDDEN_DEATH_START_TICK - SHRINK_LEAD_TICKS)) *
+                  100) /
+                  SHRINK_LEAD_TICKS,
+              ),
+            );
+      if (prox > 0) {
+        shrinkScaled = Math.floor(
+          (this.curShrinkWeight * SHRINK_SURVIVAL_RANK[idx(rx, ry)]! * prox) / 100,
+        );
+      }
+    }
     return (
       W_RESCUE * rescue +
       wAttack * pressure +
@@ -1745,7 +1795,8 @@ export class BotController {
       W_GROWTH * growthScaled +
       W_POSITION * pos +
       retreatScaled +
-      huntScaled
+      huntScaled +
+      shrinkScaled
     );
   }
 
@@ -2152,6 +2203,7 @@ export class BotController {
       profile.zoneStandoffTiles > 0
         ? profile.zoneStandoffTiles
         : (this.tuning.zoneStandoff ?? 0);
+    this.curShrinkWeight = profile.shrinkSurvivalWeight;
 
     const huntStart = profile.huntStartTick;
     const urgency =

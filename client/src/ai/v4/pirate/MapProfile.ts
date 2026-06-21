@@ -40,4 +40,6 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   huntStartTick: 2400,
   // No ring override — pirate's Zoner keeps its own wider stand-off (tuning value).
   zoneStandoffTiles: 0,
+  // No shrink-survival pull on pirate (open map already wins; keep it untouched).
+  shrinkSurvivalWeight: 0,
 });

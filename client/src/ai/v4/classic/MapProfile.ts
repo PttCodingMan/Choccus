@@ -88,4 +88,9 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // near-peer at arm's length (which mirrors to a sudden-death coin-flip). This is
   // the zoner-specific kill lever; sweep alongside huntStartTick.
   zoneStandoffTiles: 2,
+  // SUDDEN-DEATH SURVIVAL (v4-classic, NEW mechanism): pre-position toward the
+  // late-hardening center as the shrink nears so the bot outlasts a near-peer that
+  // only reacts to already-hard tiles. This is the main lever to break the classic
+  // endgame mirror ties (where knob-tuning the fight itself washed out).
+  shrinkSurvivalWeight: 2,
 });
