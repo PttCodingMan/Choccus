@@ -43,7 +43,8 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // SUDDEN-DEATH SURVIVAL (v4-pirate): the main mirror-breaker here (zoner 50->58
   // at weight 4). Push to 6 — the open-map mirror responded strongly, so a
   // stronger center pre-position may extend the lead toward +50. Under bench.
-  shrinkSurvivalWeight: 6,
+  // (weight 4: zoner 58% | weight 6: zoner 60% — still climbing; probe 8.)
+  shrinkSurvivalWeight: 8,
   // Mid cannon dev target (shared default) — pirate is byte-unchanged.
   devTargetCannon: 3,
   // No corner-finish ring collapse on pirate (open map, untouched).
