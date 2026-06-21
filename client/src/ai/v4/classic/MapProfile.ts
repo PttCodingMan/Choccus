@@ -66,9 +66,10 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // and more-items 64%→75%. Only active while isolated.
   isolatedSurvEnough: 8,
   // Full caution kicks in when a foe is within this many open-path hops (else the
-  // bot farms aggressively). Tuned for the closed lattice where v2-ChaosV's
-  // wall-off is the main death cause; see the sweep in tools/sim-runner.
-  cautionDist: 6,
+  // bot farms aggressively). Probe 9 (from 6): keep more escape margin EARLIER
+  // near the aggressive trapper so it can't lure/seal us — survive to the endgame
+  // we already win. Orthogonal to the exhausted farming/timing/seal levers.
+  cautionDist: 9,
   // Once connected AND ahead on pickups, back away from the foe to preserve the
   // development lead (engaging the wall-off loses on classic).
   protectLead: true,
