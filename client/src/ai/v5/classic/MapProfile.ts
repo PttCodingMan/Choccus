@@ -136,6 +136,4 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // v5 ROBUST REFUGE: flee a bomb to a junction, not the nearest dead-end. Pure
   // win on the closed classic map (BT +49->+62 over v4, mirror 52.5%->55.6%).
   robustRefuge: true,
-  // Always-on robust refuge already covers classic; no late-only variant needed.
-  robustRefugeLate: false,
 });

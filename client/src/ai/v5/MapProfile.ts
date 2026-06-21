@@ -247,17 +247,4 @@ export interface MapProfile {
    * via the entrap term alone (BT #1, +22). false = nearest refuge (v4 behaviour).
    */
   readonly robustRefuge: boolean;
-  /**
-   * v5 ROBUST REFUGE — LATE-ONLY variant (per map). When true, robust refuge
-   * selection (see `robustRefuge`) turns on ONLY once the sudden-death shrink is
-   * approaching (tick ≥ SUDDEN_DEATH_START − SHRINK_LEAD_TICKS). Rationale: on the
-   * open pirate map, full-time robust refuge buys a mirror edge but bleeds early
-   * FARMING tempo vs the v3 dev-racers (sinks the ladder). That tempo cost is an
-   * EARLY-game problem — by the shrink there is nothing left to farm, yet the
-   * mirror/seal endgame (where every pirate-mirror loss occurs) is exactly then.
-   * So pirate runs robust refuge late-only: anti-seal benefit in the decisive
-   * window, zero early tempo cost. classic uses always-on `robustRefuge` instead
-   * (closed map, no tempo conflict). false = no late-only behaviour.
-   */
-  readonly robustRefugeLate: boolean;
 }

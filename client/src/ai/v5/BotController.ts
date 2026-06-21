@@ -2396,13 +2396,7 @@ export class BotController {
     this.curEconBoostMax = profile.devEconBoostMax;
     this.curSealMult = profile.sealWeightMult;
     this.curEntrapWeight = profile.entrapWeight;
-    // Robust refuge: always-on (classic) OR late-only once the shrink approaches
-    // (pirate — avoids the early farming-tempo cost while keeping the anti-seal
-    // benefit for the decisive shrink endgame).
-    this.curRobustRefuge =
-      profile.robustRefuge ||
-      (profile.robustRefugeLate &&
-        state.tick >= SUDDEN_DEATH_START_TICK - SHRINK_LEAD_TICKS);
+    this.curRobustRefuge = profile.robustRefuge;
 
     const huntStart = profile.huntStartTick;
     const urgency =

@@ -73,8 +73,4 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // coupled to a farming-tempo loss vs the v3 dev-racers (pirate BT 1809->1766);
   // pirate wins the ladder via the entrap term alone (BT #1, +22 over v4).
   robustRefuge: false,
-  // ...but turn robust refuge ON LATE (shrink approaching): by then farming is
-  // over so there is no tempo cost, while the anti-seal benefit lands in the
-  // decisive shrink endgame where every pirate-mirror loss occurs. Under A/B.
-  robustRefugeLate: true,
 });
