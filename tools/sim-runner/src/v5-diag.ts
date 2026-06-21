@@ -19,21 +19,13 @@
  * Pure analysis (no BT, no history). Deterministic CRN seeds (scenarioSeed).
  */
 import { GamePhase } from '../../../shared/types';
-import {
-  FUSE_TICKS,
-  MAP_COLS,
-  MAP_ROWS,
-  SPARK_TICKS,
-  SUDDEN_DEATH_START_TICK,
-  SUDDEN_DEATH_TILE_INTERVAL,
-} from '../../../shared/constants';
+import { FUSE_TICKS, MAP_COLS, SPARK_TICKS, SUDDEN_DEATH_START_TICK } from '../../../shared/constants';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
 import { type InputFrame } from '../../../client/src/sim/InputBuffer';
 import { DIRECTION_ORDER } from '../../../client/src/sim/InputBuffer';
 import { tick, createInitialState, type SimState } from '../../../client/src/sim/Sim';
 import { idx, inBounds } from '../../../client/src/sim/Map';
 import { dirDX, dirDY, tileOf } from '../../../client/src/sim/Player';
-import { SPIRAL_ORDER } from '../../../client/src/sim/SuddenDeath';
 import { openPassable, bfsFirstStep } from '../../../client/src/ai/common/grid';
 import { buildDangerMap, type IntervalDanger } from '../../../client/src/ai/common/dangerMap';
 import { MAPS, type MapKind, makeController } from './bench-utils';
@@ -48,23 +40,9 @@ const RING_MAX = Math.ceil(WINDOW / SAMPLE_EVERY) + 2;
 const FLOOD_CAP = 12;
 const FREE_CAP = 24;
 
-/** Per-tile sudden-death harden tick (mirrors BotController.HARDEN_TICK). */
-const HARDEN_NEVER = 0x7fffffff;
-const HARDEN_TICK: Int32Array = (() => {
-  const a = new Int32Array(MAP_COLS * MAP_ROWS).fill(HARDEN_NEVER);
-  for (let i = 0; i < SPIRAL_ORDER.length; i++) {
-    const [x, y] = SPIRAL_ORDER[i]!;
-    a[idx(x, y)] = SUDDEN_DEATH_START_TICK + i * SUDDEN_DEATH_TILE_INTERVAL;
-  }
-  return a;
-})();
-
-/** Escape-branch count — the SAME (shrink-aware) metric the v5 bot uses. */
+/** Escape-branch count — the SAME metric the v5 bot's anti-entrapment term uses. */
 function escapeBranches(state: SimState, danger: IntervalDanger, rx: number, ry: number): number {
   const base = openPassable(state);
-  const t = state.tick;
-  const hardensSoon = (i: number): boolean => HARDEN_TICK[i]! - t <= STEP_DANGER_HORIZON;
-  const hardensWithinRefuge = (i: number): boolean => HARDEN_TICK[i]! - t <= SURV_SAFE_HORIZON;
   const selfIdx = idx(rx, ry);
   let branches = 0;
   for (const d of DIRECTION_ORDER) {
@@ -74,7 +52,6 @@ function escapeBranches(state: SimState, danger: IntervalDanger, rx: number, ry:
     const nIdx = idx(nx, ny);
     const ne = danger.earliestLethal(nIdx);
     if (ne !== undefined && ne <= STEP_DANGER_HORIZON) continue;
-    if (hardensSoon(nIdx)) continue;
     const seen = new Set<number>([selfIdx, nIdx]);
     const queue = [nIdx];
     let head = 0;
@@ -85,7 +62,7 @@ function escapeBranches(state: SimState, danger: IntervalDanger, rx: number, ry:
       head += 1;
       visited += 1;
       const e = danger.earliestLethal(cur);
-      if ((e === undefined || e > SURV_SAFE_HORIZON) && !hardensWithinRefuge(cur)) {
+      if (e === undefined || e > SURV_SAFE_HORIZON) {
         reached = true;
         break;
       }
@@ -99,7 +76,6 @@ function escapeBranches(state: SimState, danger: IntervalDanger, rx: number, ry:
         if (seen.has(mi)) continue;
         const me = danger.earliestLethal(mi);
         if (me !== undefined && me <= STEP_DANGER_HORIZON) continue;
-        if (hardensSoon(mi)) continue;
         seen.add(mi);
         queue.push(mi);
       }
@@ -212,7 +188,7 @@ async function main(): Promise<void> {
           // Sample the target's features BEFORE advancing (state the bot saw).
           const me = state.players[targetSlot]!;
           const foe = state.players[oppSlot]!;
-          if (me.alive && !me.trapped && state.tick % SAMPLE_EVERY === 0) {
+          if (me.alive && !me.trapped) {
             const danger = buildDangerMap(state);
             const mx = tileOf(me.posX);
             const my = tileOf(me.posY);
@@ -236,7 +212,7 @@ async function main(): Promise<void> {
               devGap: devSum(me) - devSum(foe),
               enemyBombsNear,
             });
-            if (ring.length > RING_MAX) ring.shift();
+            if (ring.length > WINDOW) ring.shift();
           }
           if (me.trapped) wasTrappedRecently = true;
           state = tick(state, frame);

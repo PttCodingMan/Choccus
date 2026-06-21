@@ -55,7 +55,6 @@ import {
   PLAYER_START_FIRE,
   SPARK_TICKS,
   SUDDEN_DEATH_START_TICK,
-  SUDDEN_DEATH_TILE_INTERVAL,
 } from '../../../../shared/constants';
 import { ActionFlags, Direction, ItemKind, TileKind } from '../../../../shared/types';
 import type { BotTuning } from './BotConfig';
@@ -407,25 +406,6 @@ const SHRINK_SURVIVAL_RANK: Int32Array = (() => {
     rank[idx(x, y)] = i; // 0 = first to harden (outer ring), last = center.
   }
   return rank;
-})();
-/**
- * Per-tile sudden-death HARDEN TICK: the exact tick each interior tile turns HARD
- * in the inward spiral (sim/SuddenDeath: SPIRAL_ORDER[i] hardens at
- * SUDDEN_DEATH_START_TICK + i·SUDDEN_DEATH_TILE_INTERVAL). Border / non-interior
- * tiles never harden by the spiral → a sentinel "never". Pure compile-time
- * constant of the map dimensions; lets escapeBranches treat a refuge that the
- * closing wall will entomb within the escape horizon as NOT a refuge — the v5 bot
- * otherwise read the shrink-blind bomb danger map only and walked into pockets the
- * wall was about to seal (every pirate-mirror loss was a shrink-phase SEALED death).
- */
-const HARDEN_NEVER = 0x7fffffff;
-const HARDEN_TICK: Int32Array = (() => {
-  const a = new Int32Array(MAP_COLS * MAP_ROWS).fill(HARDEN_NEVER);
-  for (let i = 0; i < SPIRAL_ORDER.length; i++) {
-    const [x, y] = SPIRAL_ORDER[i]!;
-    a[idx(x, y)] = SUDDEN_DEATH_START_TICK + i * SUDDEN_DEATH_TILE_INTERVAL;
-  }
-  return a;
 })();
 /** Ticks BEFORE the shrink starts that the survival pull begins ramping in. */
 const SHRINK_LEAD_TICKS = 1800; // ~30 s — drift to center from ~90 s onward.
@@ -1141,14 +1121,6 @@ export class BotController {
    * key: it models that a foe follow-up bomb on (rx,ry)'s only exit corridor seals
    * the bot, so two branches that both funnel back through the SAME single neighbour
    * still read as one. Pure / deterministic (DIRECTION_ORDER, integer, no RNG).
-   *
-   * SHRINK-AWARE: a refuge is only "safe" if the sudden-death wall will not entomb
-   * it within the escape horizon, and the flood never paths through a tile that
-   * hardens within the near horizon. HARDEN_TICK is the spiral schedule; before the
-   * shrink HARDEN_TICK − tick is huge, so this is a no-op pre-shrink (mid-game
-   * behaviour byte-identical) and only bites once the wall is closing — exactly the
-   * pirate-mirror death window (every loss there was a shrink-phase SEALED death the
-   * shrink-blind metric could not foresee).
    */
   private escapeBranches(
     state: SimState,
@@ -1157,14 +1129,6 @@ export class BotController {
     ry: number,
   ): number {
     const base = openPassable(state);
-    const tick = state.tick;
-    // A tile is non-traversable SOON if its fire OR the closing wall arrives within
-    // the near step horizon; it is a true refuge only if BOTH fire and the wall
-    // stay clear past the safe horizon.
-    const hardensSoon = (i: number): boolean =>
-      HARDEN_TICK[i]! - tick <= STEP_DANGER_HORIZON;
-    const hardensWithinRefuge = (i: number): boolean =>
-      HARDEN_TICK[i]! - tick <= SURV_SAFE_HORIZON;
     const selfIdx = idx(rx, ry);
     let branches = 0;
     for (const d of DIRECTION_ORDER) {
@@ -1174,7 +1138,6 @@ export class BotController {
       const nIdx = idx(nx, ny);
       const ne = danger.earliestLethal(nIdx);
       if (ne !== undefined && ne <= STEP_DANGER_HORIZON) continue; // can't step here.
-      if (hardensSoon(nIdx)) continue; // wall seals this step too soon.
       // Flood from this neighbour, never re-entering the self tile, until a truly-
       // safe tile is reached or the budget runs out.
       const seen = new Set<number>([selfIdx, nIdx]);
@@ -1187,10 +1150,7 @@ export class BotController {
         head += 1;
         visited += 1;
         const e = danger.earliestLethal(cur);
-        if (
-          (e === undefined || e > SURV_SAFE_HORIZON) &&
-          !hardensWithinRefuge(cur)
-        ) {
+        if (e === undefined || e > SURV_SAFE_HORIZON) {
           reached = true;
           break;
         }
@@ -1204,7 +1164,6 @@ export class BotController {
           if (seen.has(mi)) continue;
           const me = danger.earliestLethal(mi);
           if (me !== undefined && me <= STEP_DANGER_HORIZON) continue;
-          if (hardensSoon(mi)) continue; // don't flood through soon-walled tiles.
           seen.add(mi);
           queue.push(mi);
         }
