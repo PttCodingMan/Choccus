@@ -75,6 +75,18 @@
       }
     },
     {
+      "a": "v3:farmer",
+      "b": "v5:zoner",
+      "winsA": 37,
+      "winsB": 43,
+      "draws": 14,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:hunter",
       "b": "v3:reactive",
       "winsA": 200,
@@ -135,6 +147,18 @@
       }
     },
     {
+      "a": "v3:hunter",
+      "b": "v5:zoner",
+      "winsA": 4.5,
+      "winsB": 75.5,
+      "draws": 1,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:reactive",
       "b": "v3:runner",
       "winsA": 1.5,
@@ -183,6 +207,18 @@
       }
     },
     {
+      "a": "v3:reactive",
+      "b": "v5:zoner",
+      "winsA": 3,
+      "winsB": 77,
+      "draws": 0,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:runner",
       "b": "v3:trapper",
       "winsA": 59.5,
@@ -219,6 +255,18 @@
       }
     },
     {
+      "a": "v3:runner",
+      "b": "v5:zoner",
+      "winsA": 22.5,
+      "winsB": 57.5,
+      "draws": 1,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:trapper",
       "b": "v3:zoner",
       "winsA": 89.5,
@@ -243,6 +291,18 @@
       }
     },
     {
+      "a": "v3:trapper",
+      "b": "v5:zoner",
+      "winsA": 35.5,
+      "winsB": 44.5,
+      "draws": 17,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:zoner",
       "b": "v4:zoner",
       "winsA": 76,
@@ -251,6 +311,18 @@
       "games": 200,
       "meta": {
         "repeats": 100,
+        "seedBase": 305419896
+      }
+    },
+    {
+      "a": "v3:zoner",
+      "b": "v5:zoner",
+      "winsA": 33.5,
+      "winsB": 46.5,
+      "draws": 9,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
         "seedBase": 305419896
       }
     }

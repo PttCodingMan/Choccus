@@ -75,6 +75,18 @@
       }
     },
     {
+      "a": "v3:farmer",
+      "b": "v5:zoner",
+      "winsA": 27,
+      "winsB": 53,
+      "draws": 4,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:hunter",
       "b": "v3:reactive",
       "winsA": 125,
@@ -135,6 +147,18 @@
       }
     },
     {
+      "a": "v3:hunter",
+      "b": "v5:zoner",
+      "winsA": 3,
+      "winsB": 77,
+      "draws": 0,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:reactive",
       "b": "v3:runner",
       "winsA": 19,
@@ -183,6 +207,18 @@
       }
     },
     {
+      "a": "v3:reactive",
+      "b": "v5:zoner",
+      "winsA": 2.5,
+      "winsB": 77.5,
+      "draws": 1,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:runner",
       "b": "v3:trapper",
       "winsA": 41.5,
@@ -219,6 +255,18 @@
       }
     },
     {
+      "a": "v3:runner",
+      "b": "v5:zoner",
+      "winsA": 7.5,
+      "winsB": 72.5,
+      "draws": 1,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:trapper",
       "b": "v3:zoner",
       "winsA": 97,
@@ -243,6 +291,18 @@
       }
     },
     {
+      "a": "v3:trapper",
+      "b": "v5:zoner",
+      "winsA": 33,
+      "winsB": 47,
+      "draws": 4,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
+        "seedBase": 305419896
+      }
+    },
+    {
       "a": "v3:zoner",
       "b": "v4:zoner",
       "winsA": 88.5,
@@ -251,6 +311,18 @@
       "games": 200,
       "meta": {
         "repeats": 100,
+        "seedBase": 305419896
+      }
+    },
+    {
+      "a": "v3:zoner",
+      "b": "v5:zoner",
+      "winsA": 30,
+      "winsB": 50,
+      "draws": 2,
+      "games": 80,
+      "meta": {
+        "repeats": 40,
         "seedBase": 305419896
       }
     }
