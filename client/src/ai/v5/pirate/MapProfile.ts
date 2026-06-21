@@ -63,6 +63,11 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   devEconBoostMax: 100,
   // Default seal weight — pirate byte-unchanged.
   sealWeightMult: 100,
-  // v5 ANTI-ENTRAPMENT (NEW defensive axis). Off here until A/B-tuned via v5-probe.
+  // v5 ANTI-ENTRAPMENT (NEW defensive axis): penalise dead-end / single-exit
+  // result tiles while a foe is near (mostly inert on the open map, but free).
   entrapWeight: 10,
+  // v5 ROBUST REFUGE: OFF on pirate — on the open map the mirror edge it buys is
+  // coupled to a farming-tempo loss vs the v3 dev-racers (pirate BT 1809->1766);
+  // pirate wins the ladder via the entrap term alone (BT #1, +22 over v4).
+  robustRefuge: false,
 });

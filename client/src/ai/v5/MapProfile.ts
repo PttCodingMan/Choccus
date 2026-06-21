@@ -233,4 +233,18 @@ export interface MapProfile {
    * it cannot make the bot suicidal. Tuned per map.
    */
   readonly entrapWeight: number;
+  /**
+   * v5 ROBUST REFUGE selection (per map). When true, the post-bomb COMMIT paths
+   * (final bomb emit + the two multi-bomb anchors) do NOT stop at the nearest
+   * valid refuge — they scan all valid refuges within maxEscapeLen and run to the
+   * one with the MOST escape branches (tie → nearest), so the bot flees a bomb to
+   * a junction rather than a single-exit pocket a follow-up bomb can seal. The
+   * cheap boolean bomb-GATE always uses the nearest-refuge fast path regardless.
+   * CLASSIC on: a pure win on the closed map (BT +49->+62 over v4, mirror
+   * 52.5%->55.6%). PIRATE off: on the open map chasing a far high-branch refuge
+   * bleeds farming tempo vs the v3 dev-racers (pirate BT 1809->1766), and the
+   * open-map mirror edge is coupled to that tempo cost — so pirate wins the ladder
+   * via the entrap term alone (BT #1, +22). false = nearest refuge (v4 behaviour).
+   */
+  readonly robustRefuge: boolean;
 }

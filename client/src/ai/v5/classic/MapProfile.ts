@@ -130,7 +130,10 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // 58->55, farmer 57->53) — over-committing to a seal makes the bot overextend
   // and lose. Seam kept neutral.
   sealWeightMult: 100,
-  // v5 ANTI-ENTRAPMENT (NEW defensive axis). Off here until A/B-tuned via v5-probe
-  // (start neutral so the first probe confirms byte-parity with v4:zoner).
+  // v5 ANTI-ENTRAPMENT (NEW defensive axis): penalise dead-end / single-exit
+  // result tiles while a foe is near. Measured net win on classic.
   entrapWeight: 10,
+  // v5 ROBUST REFUGE: flee a bomb to a junction, not the nearest dead-end. Pure
+  // win on the closed classic map (BT +49->+62 over v4, mirror 52.5%->55.6%).
+  robustRefuge: true,
 });

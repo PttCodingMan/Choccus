@@ -429,12 +429,6 @@ const ENTRAP_BRANCH_TARGET = 2;
 /** Per-branch flood visited-cell budget when measuring escape branches (cheap,
  * bounded; only runs while a foe is within combat range). */
 const ENTRAP_FLOOD_CAP = 12;
-/** Weight (in tiles) traded for one extra escape branch when picking the post-bomb
- * COMMIT refuge: refuge cost = dist − ROBUST_REFUGE_W·min(branches, target), so a
- * more-escapable refuge is preferred only when it is at most ~ROBUST_REFUGE_W extra
- * hops away. Bounds the tempo cost of avoiding dead-end refuges (full max-branches
- * selection bled ~5pt vs the v3 dev-racers on the open map). */
-const ROBUST_REFUGE_W = 2;
 
 /** A scored candidate action. */
 interface Candidate {
@@ -521,6 +515,11 @@ export class BotController {
    * `MapProfile.entrapWeight`); 0 = off. Read by leafReward to penalise result
    * tiles that are dead-ends / single-exit pockets while a foe is near. */
   private curEntrapWeight = 0;
+
+  /** Effective v5 ROBUST-REFUGE flag for THIS decision (per-map
+   * `MapProfile.robustRefuge`); when true the bomb-COMMIT refuge is the most-
+   * escapable one, not just the nearest. classic on, pirate off. */
+  private curRobustRefuge = false;
 
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
@@ -1679,7 +1678,7 @@ export class BotController {
     const queue: number[] = [startIdx];
     let cursor = 0;
     let best: readonly [number, number] | null = null;
-    let bestCost = Number.MAX_SAFE_INTEGER;
+    let bestBranches = -1;
     let bestDist = Number.MAX_SAFE_INTEGER;
     while (cursor < queue.length) {
       const cur = queue[cursor];
@@ -1696,20 +1695,19 @@ export class BotController {
           this.escapeFitsInFuse(hyp.fuseTicks, dist, ticksPerTile)
         ) {
           if (!preferRobust) return [cx, cy];
-          // TEMPO-BOUNDED robustness: minimise cost = dist − ROBUST_REFUGE_W ·
-          // min(branches, target). A more-escapable refuge is only preferred when
-          // it is at most ~ROBUST_REFUGE_W extra hops away, so the bot escapes a
-          // dead-end WITHOUT chasing a far refuge and bleeding farming tempo —
-          // full max-branches selection cost ~5pt vs the frozen v3 farmers/runners
-          // on the open pirate map (their dev race), sinking v5's pirate BT Elo.
-          const br = Math.min(
-            this.escapeBranches(state, dangerPessimistic, cx, cy),
-            ENTRAP_BRANCH_TARGET,
-          );
-          const cost = dist - ROBUST_REFUGE_W * br;
-          if (cost < bestCost || (cost === bestCost && dist < bestDist)) {
+          // Robust selection: most escape branches wins, nearest breaks the tie.
+          // Enabled PER-MAP (classic only). On the CLOSED classic map this is a
+          // pure win (BT +49->+62 over v4, direct mirror 52.5%->55.6%): escaping a
+          // bomb to a junction instead of the nearest dead-end stops the follow-up
+          // seal. On the OPEN pirate map it is OFF: chasing a far high-branch refuge
+          // there bleeds farming tempo vs the v3 dev-racers (pirate BT 1809->1766)
+          // and tempo-bounding it instead collapsed the mirror (45%) — the open-map
+          // mirror edge and the v3-pool dev race are coupled, so pirate keeps the
+          // nearest-refuge fast path and wins the ladder via the entrap term alone.
+          const br = this.escapeBranches(state, dangerPessimistic, cx, cy);
+          if (br > bestBranches || (br === bestBranches && dist < bestDist)) {
             best = [cx, cy];
-            bestCost = cost;
+            bestBranches = br;
             bestDist = dist;
           }
         }
@@ -2039,7 +2037,7 @@ export class BotController {
       myPlayer.fire,
       ticksPerTile,
       foeReachTiles,
-      true, // commit to the MOST escapable refuge, not just the nearest.
+      this.curRobustRefuge, // classic: commit to the MOST escapable refuge.
     );
   }
 
@@ -2098,7 +2096,7 @@ export class BotController {
       myPlayer.fire,
       ticksPerTile,
       foeReachTiles,
-      true, // commit to the MOST escapable refuge, not just the nearest.
+      this.curRobustRefuge, // classic: commit to the MOST escapable refuge.
     );
   }
 
@@ -2398,6 +2396,7 @@ export class BotController {
     this.curEconBoostMax = profile.devEconBoostMax;
     this.curSealMult = profile.sealWeightMult;
     this.curEntrapWeight = profile.entrapWeight;
+    this.curRobustRefuge = profile.robustRefuge;
 
     const huntStart = profile.huntStartTick;
     const urgency =
@@ -3034,7 +3033,7 @@ export class BotController {
               myPlayer.fire,
               tpt,
               foeReachTiles,
-              true, // commit to the MOST escapable refuge, not just the nearest.
+              this.curRobustRefuge, // classic: commit to the MOST escapable refuge.
             )
           : null;
         if (
