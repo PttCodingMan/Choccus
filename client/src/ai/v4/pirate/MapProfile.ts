@@ -45,8 +45,9 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // stronger center pre-position extends the lead. Measured sweet spot: 6.
   // weight 4: zoner 58 | weight 6: zoner 60, trapper 58 | weight 8: zoner 62 but
   // trapper 54 (over-centralizing neglects the trapper fight — net wash, less
-  // robust). 6 keeps every top matchup healthy. Probe 7 to clear +50 cleanly.
-  shrinkSurvivalWeight: 7,
+  // robust). 6 keeps every top matchup healthy. weight 7 also drops trapper
+  // (58->55) with no mirror gain — 6 is the confirmed peak (+48 lead).
+  shrinkSurvivalWeight: 6,
   // Mid cannon dev target (shared default) — pirate is byte-unchanged.
   devTargetCannon: 3,
   // No corner-finish on pirate: measured neutral-to-negative on the open map
