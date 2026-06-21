@@ -200,4 +200,13 @@ export interface MapProfile {
    * trigger the over-farming that a higher cannon target did.
    */
   readonly devTargetFire: number;
+  /**
+   * Max early-economy boost (PERCENT) applied to brick-farming value when freshly
+   * spawned, fading linearly to 0 as the bot develops / a foe engages. Shared
+   * default 100 (up to 2x). Classic raises it so the bot farms harder in the
+   * opening and reaches its kit (notably the long fire-6 blast) FASTER than the
+   * v3 peers that share the base value — out-develop, then enter combat ahead.
+   * Only affects the isolated early phase (effDevFactor>0); 0 once engaged.
+   */
+  readonly devEconBoostMax: number;
 }

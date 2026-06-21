@@ -484,6 +484,12 @@ export class BotController {
    * collapsed) the Zoner ring collapses so the bot dives in to seal it. */
   private curCornerFinish = false;
 
+  /** Effective max early-economy boost % for THIS decision (per-map
+   * `MapProfile.devEconBoostMax`); read by leafReward. Classic raises it so the
+   * bot out-develops the v3 peers in the opening (reaches the fire-6 kit faster).
+   * Fades to 0 as the bot develops / engages, so it only accelerates early. */
+  private curEconBoostMax = DEV_ECON_BOOST_MAX;
+
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
   private lastFoeTile = -1;
@@ -1740,7 +1746,7 @@ export class BotController {
       effDevFactor,
       inPlaceBricks,
     );
-    const econBoost = Math.floor((DEV_ECON_BOOST_MAX * effDevFactor) / 100);
+    const econBoost = Math.floor((this.curEconBoostMax * effDevFactor) / 100);
     // KILL DOCTRINE: economy + growth (the farming terms) FADE with clock urgency
     // — a development lead is worthless under the new timeout=loss rule, so the
     // back of the match must be spent hunting, not farming. urgency 0 → full
@@ -2233,6 +2239,7 @@ export class BotController {
     this.curDevTargetCannon = profile.devTargetCannon;
     this.curDevTargetFire = profile.devTargetFire;
     this.curCornerFinish = profile.cornerFinish;
+    this.curEconBoostMax = profile.devEconBoostMax;
 
     const huntStart = profile.huntStartTick;
     const urgency =

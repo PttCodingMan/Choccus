@@ -111,4 +111,9 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // the bot builds a longer cross — seals/corner-walls cover more exits and reach
   // fleeing foes. Few pickups, so no over-farming (unlike the cannon target).
   devTargetFire: 6,
+  // FASTER DEVELOPMENT (v4-classic): raise the early-economy boost to 200 (up to
+  // 3x) so the bot farms harder in the opening and reaches its kit (esp. fire 6)
+  // faster than the v3 peers — out-develop, then enter combat ahead. Fades to 0
+  // as it develops / engages, so it never over-farms into a fight.
+  devEconBoostMax: 200,
 });

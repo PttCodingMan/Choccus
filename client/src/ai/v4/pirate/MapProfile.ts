@@ -48,4 +48,6 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   cornerFinish: false,
   // Mid fire dev target (shared default) — pirate byte-unchanged.
   devTargetFire: 4,
+  // Default early-economy boost (2x) — pirate byte-unchanged.
+  devEconBoostMax: 100,
 });
