@@ -99,11 +99,16 @@ export function buildChallengerGames(
   challenger: number,
   opponents: number[],
   repeats: number,
+  maps: readonly MapKind[] = MAPS,
 ): Game[] {
   const games: Game[] = [];
   let gameId = 0;
+  // Iterate the GLOBAL map index m (0=classic, 1=pirate) so scenarioSeed(m, r) is
+  // identical whether or not a map is filtered out — CRN stays byte-stable. The
+  // `maps` filter only skips scheduling, it never renumbers seeds.
   for (let m = 0; m < MAPS.length; m++) {
     const mapKind = MAPS[m]!;
+    if (!maps.includes(mapKind)) continue;
     for (const opp of opponents) {
       for (let r = 0; r < repeats; r++) {
         const seed = scenarioSeed(m, r);

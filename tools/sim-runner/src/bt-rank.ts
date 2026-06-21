@@ -46,6 +46,13 @@ async function main(): Promise<void> {
   const workers = Number(arg(argv, 'workers', '8'));
   const includeNoise = argv.includes('--include-noise');
   const write = !argv.includes('--no-write');
+  // --map filters which maps to actually run (default: all). Tuning one map (the
+  // other profile being neutral) needs only that map, ~halving the duels. CRN is
+  // preserved (seeds key off the global map index, not the filtered list).
+  const mapArg = arg(argv, 'map', '');
+  const selMaps = mapArg
+    ? (mapArg.split(',').map((s) => s.trim()) as MapKind[]).filter((m) => MAPS.includes(m))
+    : MAPS;
 
   const challenger = parseChallenger(targetSpec);
   const oppArches = arg(argv, 'opponents', '')
@@ -60,18 +67,18 @@ async function main(): Promise<void> {
 
   console.log(
     `Placing ${idOf(challenger)} vs v3 pool [${oppArches.join(', ')}]\n` +
-      `  ${repeats} repeats × 2 seatings × ${MAPS.length} maps, workers=${workers}` +
+      `  ${repeats} repeats × 2 seatings × ${selMaps.length} map(s) [${selMaps.join(', ')}], workers=${workers}` +
       (write ? '' : '  (--no-write: not persisting)'),
   );
 
-  const games = buildChallengerGames(0, opponents, repeats);
+  const games = buildChallengerGames(0, opponents, repeats, selMaps);
   const t0 = Date.now();
   const byMap = await runAndTally(games, agents, workers);
   console.log(`  ran ${games.length} duels in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
   // Upsert into each map's history; persist unless --no-write.
   const histories = mergeIntoHistories(byMap, agents, { repeats, seedBase: BASE });
-  for (const map of MAPS) {
+  for (const map of selMaps) {
     if (write) saveHistory(histories.get(map)!);
     reportMap(map, histories.get(map)!, idOf(challenger), byMap.get(map)!, agents, opponents);
   }
