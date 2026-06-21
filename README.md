@@ -124,17 +124,6 @@ The client resolves the relay URL automatically — no hardcoded `localhost`:
 
 Uses `wss://` automatically when the page is served over HTTPS.
 
-### Changing the ports
-
-```sh
-CHOCCUS_PORT=9000 CHOCCUS_STATIC_PORT=9001 bash scripts/serve.sh
-```
-
-Players connect to `http://<host>:9001/?port=9000` (or just the static
-URL — the default port is 8765 in the resolver, so a non-default relay port
-needs either `CHOCCUS_PORT` matching the client's default, or a `?port=` param
-in the URL / invite link).
-
 ### Forcing a client rebuild before serving
 
 ```sh
@@ -167,10 +156,10 @@ Then open the site over `https://` — the client automatically upgrades to `wss
 ## Running tests
 
 ```sh
-# Determinism / simulation / AI tests  (vitest: tsc --noEmit + 110 tests, golden hashes)
+# Determinism / simulation / AI tests  (vitest: tsc --noEmit + golden hashes)
 npm test
 
-# Python relay server tests  (pytest: 46 tests)
+# Python relay server tests  (pytest)
 server/.venv/bin/python -m pytest server/tests -q
 ```
 
@@ -200,7 +189,7 @@ client/src/
                            (no Pixi/net/wall-clock; ESLint-guarded — keep it deterministic)
   net/                   — lockstep netcode: wsUrl, netMode, NetClient, NetLobby,
                            LockstepEngine (per-tick input sync), MatchRunner
-  ai/                    — deterministic bots: v1/ (frozen) + v2/ (live) snapshots,
+  ai/                    — deterministic bots: v1/ + v2/ (frozen) + v3/ (live) snapshots,
                            common/ (sim-aligned perception), mapChampions.ts
   render/                — Pixi.js v8 renderers + interpolation (renders between two sim states)
   input/ ui/ config/ audio/ — keyboard, FeelPanel, FeelParams, sound
