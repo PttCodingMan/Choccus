@@ -1,12 +1,13 @@
 import type { MapKind } from '../sim/Map';
-/** Per-map v3-bench best archetype (the "champion") used as the DEFAULT solo
- *  bot. Picked under the live rules (sudden-death + timeout=challenger loss):
- *  classic→farmer 69.2%, pirate→zoner 81.7% (see tools/sim-runner v3-bench +
- *  docs/ai-versions.md). Update if a future tuning pass changes the best row. */
+/** Per-map champion = the strongest bot on that map, used as the DEFAULT solo
+ *  bot. As of 2026-06-21 evaluation moved to the Bradley-Terry yardstick and v4
+ *  shipped: v4:zoner is #1 on BOTH maps (classic 1720 = +42 over #2, pirate 1789
+ *  = +48 over #2; see tools/sim-runner bt-rank + docs/ai-versions.md §八), so it
+ *  is the champion on both. Update if a future tuning pass changes the top row. */
 export const MAP_CHAMPION: Readonly<Record<MapKind, { version: number; archetype: string }>> =
   Object.freeze({
-    classic: { version: 3, archetype: 'farmer' },
-    pirate:  { version: 3, archetype: 'zoner' },
+    classic: { version: 4, archetype: 'zoner' },
+    pirate:  { version: 4, archetype: 'zoner' },
   });
 export function championFor(map: MapKind): { version: number; archetype: string } {
   return MAP_CHAMPION[map];
