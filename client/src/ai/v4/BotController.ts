@@ -490,6 +490,12 @@ export class BotController {
    * Fades to 0 as the bot develops / engages, so it only accelerates early. */
   private curEconBoostMax = DEV_ECON_BOOST_MAX;
 
+  /** Effective SEAL reward multiplier (%) for THIS decision (per-map
+   * `MapProfile.sealWeightMult`); 100 = unscaled. Classic raises it so the bot
+   * commits harder to closing a trap (bricks + the foe's own live bombs, which
+   * sealValue already folds in) rather than orbiting — killing power, not farming. */
+  private curSealMult = 100;
+
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
   private lastFoeTile = -1;
@@ -1822,7 +1828,7 @@ export class BotController {
     return (
       W_RESCUE * rescue +
       wAttack * pressure +
-      W_SEAL * seal +
+      Math.floor((W_SEAL * seal * this.curSealMult) / 100) +
       W_ECON * econ +
       W_GROWTH * growthScaled +
       W_POSITION * pos +
@@ -2240,6 +2246,7 @@ export class BotController {
     this.curDevTargetFire = profile.devTargetFire;
     this.curCornerFinish = profile.cornerFinish;
     this.curEconBoostMax = profile.devEconBoostMax;
+    this.curSealMult = profile.sealWeightMult;
 
     const huntStart = profile.huntStartTick;
     const urgency =

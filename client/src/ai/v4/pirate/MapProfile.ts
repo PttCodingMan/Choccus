@@ -50,4 +50,6 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   devTargetFire: 4,
   // Default early-economy boost (2x) — pirate byte-unchanged.
   devEconBoostMax: 100,
+  // Default seal weight — pirate byte-unchanged.
+  sealWeightMult: 100,
 });

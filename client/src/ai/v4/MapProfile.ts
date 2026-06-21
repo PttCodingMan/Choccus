@@ -209,4 +209,12 @@ export interface MapProfile {
    * Only affects the isolated early phase (effDevFactor>0); 0 once engaged.
    */
   readonly devEconBoostMax: number;
+  /**
+   * SEAL reward multiplier (PERCENT, 100 = unscaled). Scales the W_SEAL term that
+   * rewards compressing/sealing a foe's refuge (which already accounts for bricks
+   * blocking the blast and every live bomb incl. the foe's own). Classic raises it
+   * so the bot commits harder to closing a trap rather than orbiting at the ring —
+   * killing power aimed at the aggressive trapper matchup. Pirate keeps 100.
+   */
+  readonly sealWeightMult: number;
 }
