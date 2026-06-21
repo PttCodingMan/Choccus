@@ -36,4 +36,6 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   protectLead: false,
   // Parallel-bomb cluster farming while retreating (gate-validated, far-from-foe).
   multiBombFarm: true,
+  // Kill phase engages at the global default (≈40 s) — neutral, pirate is untouched.
+  huntStartTick: 2400,
 });

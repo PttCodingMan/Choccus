@@ -136,4 +136,17 @@ export interface MapProfile {
    * one-bomb-then-flee (v2 behaviour).
    */
   readonly multiBombFarm: boolean;
+  /**
+   * Tick at which the KILL-DOCTRINE clock urgency lifts off 0 and starts ramping
+   * to 100 (at the fixed tick cap). Until this tick the close-quarters
+   * survivability clamp stays at FULL caution (`survEnough`), so the bot refuses
+   * to trade its own safety for a foe-compressing / sealing bomb; from here the
+   * clamp loosens toward HUNT_SURV_FLOOR and farming fades, i.e. this is WHEN the
+   * bot switches from "develop a kit safely" to "convert position into kills".
+   * SMALLER = engage the kill phase EARLIER (more kills, more own-risk). The
+   * pirate-neutral value equals the global T_HUNT_START (2400 ≈ 40 s); classic
+   * lowers it because the cramped lattice forces contact sooner and would
+   * otherwise mirror to a sudden-death coin-flip instead of a clean kill.
+   */
+  readonly huntStartTick: number;
 }

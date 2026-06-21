@@ -76,4 +76,11 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // the closed lattice is a development race, so doubling farming throughput is
   // the biggest remaining lever. Each extra bomb passes the full refuge gate.
   multiBombFarm: true,
+  // KILL PHASE EARLIER (v4-classic): engage the kill doctrine at tick 1200 (~20 s)
+  // instead of the 2400 default. classic is a cramped lattice where contact comes
+  // fast and the top archetypes otherwise mirror into a sudden-death coin-flip;
+  // lifting urgency off 0 sooner loosens the close-quarters survivability clamp
+  // earlier, so a foe-compressing / sealing bomb can land the kill in the midgame
+  // rather than waiting for the shrink. Sweeping this is the v4-classic lever.
+  huntStartTick: 1200,
 });

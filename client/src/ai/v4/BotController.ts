@@ -329,13 +329,13 @@ const PROTECT_LEAD_DIST = 12;
 // ---------------------------------------------------------------------------
 
 /**
- * Tick after which CLOCK URGENCY begins ramping 0→100 (linear to MATCH_MAX_TICKS).
- * Before it the bot develops a minimal trap kit (cannon/fire) at full economy;
- * after it economy/growth fade and the hunt/seal terms scale up, so the back of
- * the match is spent cornering the foe instead of farming to a timeout loss.
- * 2400 ticks = 40 s of the 180 s match.
+ * The tick after which CLOCK URGENCY begins ramping 0→100 is now PER-MAP
+ * (`MapProfile.huntStartTick`): before it the bot develops a minimal trap kit
+ * (cannon/fire) at full economy; after it economy/growth fade and the seal /
+ * survivability-clamp terms scale up, so the back of the match is spent cornering
+ * the foe instead of farming. Pirate keeps the 2400-tick (40 s) default; classic
+ * engages earlier (see classic/MapProfile.ts).
  */
-const T_HUNT_START = 2400;
 /** Tick at which urgency reaches 100 (full hunt). Earlier than the cap so the
  * whole back half of the match is fought at max aggression, not just the final
  * seconds. */
@@ -2134,17 +2134,18 @@ export class BotController {
     // growth pull so growth competes with attack until the bot is developed.
     const devFactor = this.developmentFactor(myPlayer.fire, myPlayer.cannon);
 
-    // KILL DOCTRINE clock urgency (0..100): 0 until T_HUNT_START (develop a trap
+    // KILL DOCTRINE clock urgency (0..100): 0 until profile.huntStartTick (develop a trap
     // kit at full economy), then ramps linearly to 100 at the tick cap. Fades the
     // farming terms, scales up the hunt pull, and loosens the close-quarters
     // survivability CLAMP (never the refuge gate) so a compressing bomb can win.
+    const huntStart = profile.huntStartTick;
     const urgency =
-      state.tick <= T_HUNT_START
+      state.tick <= huntStart
         ? 0
         : Math.min(
             100,
             Math.floor(
-              ((state.tick - T_HUNT_START) * 100) / (T_HUNT_FULL - T_HUNT_START),
+              ((state.tick - huntStart) * 100) / (T_HUNT_FULL - huntStart),
             ),
           );
 
