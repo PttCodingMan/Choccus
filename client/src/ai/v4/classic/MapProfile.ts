@@ -82,7 +82,10 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // lifting urgency off 0 sooner loosens the close-quarters survivability clamp
   // earlier, so a foe-compressing / sealing bomb can land the kill in the midgame
   // rather than waiting for the shrink. Sweeping this is the v4-classic lever.
-  huntStartTick: 1200,
+  // Direction 1 (enter combat sooner): probe 600 — urgency lifts even earlier so
+  // farming fades / the kill clamp loosens sooner, engaging trapper before it can
+  // out-tempo us. Under bench.
+  huntStartTick: 600,
   // TIGHTEN THE ZONER RING (v4-classic): radius 2 (vs the archetype's 4) so the
   // bot compresses into kill range on the cramped lattice instead of orbiting a
   // near-peer at arm's length (which mirrors to a sudden-death coin-flip). This is
@@ -98,11 +101,12 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // NEGATIVE (vs v3:farmer 48%->44% — farming to a full surplus loses the dev race
   // and over-exposes the bot). The cannon surplus alone does NOT produce a corner
   // trap; the existing 2-3 bomb pincer caps out regardless. A true 5-6 bomb corner
-  // RE-TEST at new caps (cannon max 6, fire 7): develop toward a 5-cannon surplus
-  // so the bot can build a maximum-range multi-bomb blockade (direction 2). The
-  // surplus hurt at the OLD caps/short blast; re-validating now that the blast is
-  // long and the cap is higher. Under bench.
-  devTargetCannon: 5,
+  // Cannon surplus re-confirmed net-negative even at the new caps (cannon 5 ->
+  // trapper 54->50): developing a surplus means more farming, which the aggressive
+  // trapper punishes regardless of cap/blast. The bot still picks up cannon ITEMS
+  // en route, so it has bombs for blockades without raising the farming target.
+  // Mid default 3.
+  devTargetCannon: 3,
   // CORNER-FINISH (v4-classic): when a foe is cornered (free space collapsed),
   // dive in (ring->1) to seal it with the multi-bomb pincer instead of orbiting.
   // Converts the Zoner's herding into actual kills against the kill-phase peers
