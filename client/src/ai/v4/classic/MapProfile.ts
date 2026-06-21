@@ -66,10 +66,11 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // and more-items 64%→75%. Only active while isolated.
   isolatedSurvEnough: 8,
   // Full caution kicks in when a foe is within this many open-path hops (else the
-  // bot farms aggressively). Probe 9 (from 6): keep more escape margin EARLIER
-  // near the aggressive trapper so it can't lure/seal us — survive to the endgame
-  // we already win. Orthogonal to the exhausted farming/timing/seal levers.
-  cautionDist: 9,
+  // bot farms aggressively). Measured: 6 is best — raising to 9 (more caution vs
+  // the aggressor) didn't move trapper (54->55, noise) and cost farmer (53->50).
+  // The survival axis is exhausted too; trapper is a seal-mirror that no lever
+  // breaks. 6 stays.
+  cautionDist: 6,
   // Once connected AND ahead on pickups, back away from the foe to preserve the
   // development lead (engaging the wall-off loses on classic).
   protectLead: true,
