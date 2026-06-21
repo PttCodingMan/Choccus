@@ -2,21 +2,21 @@
  * Strategies — the v4 BACKBONE. Unlike v3 (a deliberately non-transitive ROSTER
  * kept frozen as the Bradley-Terry yardstick), a version under active evolution
  * develops ONE line at a time (see docs/ai-versions.md §七). v4's trunk is the
- * 養成流 / Farmer archetype, chosen to shore up the WEAKER map:
- *   - classic is the lower-scoring map on every live metric (v3-bench KILL-EDGE
- *     69.2% vs pirate 81.7%; fair-duel ~70% vs ~80%) — the closed-map farming /
- *     tiebreak race that has always been the hard one;
- *   - Farmer is the classic gate CHAMPION (v3-bench best 69.2%, mapChampions
- *     classic→farmer) and the strongest developer, exactly the side the
- *     sudden-death shrink rewards ("發育＋控場才贏"; over-aggression self-destructs
- *     on the shrinking arena);
- *   - it snowballs firepower then converts the stat lead in the forced-contact
- *     endgame the shrink creates — the largest surface to evolve v4's early
- *     window (its only documented weakness, the Hunter-stolen opening).
+ * 控場流 / Zoner archetype — the strongest single strategy under the BT yardstick,
+ * which is now the metric of record (we stop reading the v3-bench KILL-EDGE gate
+ * / fair-duel lenses):
+ *   - pirate Bradley-Terry rank-1 by a clear margin (Elo 1757–1762, above farmer
+ *     1733–1740 and trapper 1726);
+ *   - classic top of the near-tied {zoner ≈ trapper ≈ farmer} cluster (Elo
+ *     1658–1671) — i.e. zoner out-rates farmer on BOTH maps;
+ *   - zone control synergises with the sudden-death shrink: it holds a stand-off
+ *     ring and herds the foe toward a corner while the shrink does the closing,
+ *     so it wins by compression without diving into self-destruction (the side
+ *     the shrink rewards).
  *
- * The tuning below is the v3 Farmer verbatim — v4 launches behaviour-identical
- * to v3:farmer, then evolves IN PLACE. The shared `BotTuning` knobs live in
- * BotConfig.ts.
+ * The tuning below is the v3 Zoner verbatim — v4 launches behaviour-identical to
+ * v3:zoner, then evolves IN PLACE (first focus: the classic map, the weaker of
+ * the two). The shared `BotTuning` knobs live in BotConfig.ts.
  *
  * Reaction is in ticks at the fixed 60 Hz timestep; the bomb fuse is 180 ticks.
  */
@@ -27,20 +27,22 @@ export const STRATEGIES: ReadonlyArray<{
   name: string;
   tuning: BotTuning;
 }> = Object.freeze([
-  // 養成流 Farmer — open by clearing bricks and grabbing fire/cannon/speed, avoid
-  // combat hard until developed, then let the stat lead decide. The v4 backbone.
+  // 控場流 Zoner — hold the centre and compress the foe from a STAND-OFF ring:
+  // bomb to wall off lanes and herd the foe toward a corner / dead-end, but never
+  // close inside `zoneStandoff`. The v4 backbone.
   Object.freeze({
-    key: 'farmer',
-    name: '養成流/Farmer',
+    key: 'zoner',
+    name: '控場流/Zoner',
     tuning: Object.freeze({
       reactionDelayTicks: 3,
       mistakeChance: 0.03,
       replanIntervalTicks: 8,
-      maxEscapeLen: 6, // longest escape budget → safest farming.
-      bombChance: 0.98, // farm at nearly every opportunity.
-      aggression: 0.3, // minimal: never hunt while still developing.
+      maxEscapeLen: 5,
+      bombChance: 0.85,
+      aggression: 1.4,
       recklessBombChance: 0,
-      combatRangeTiles: 4, // only engage at point-blank, else keep farming.
+      combatRangeTiles: 7,
+      zoneStandoff: 4, // hold the ring ~4 tiles out; compress, don't dive.
     }),
   }),
 ]);

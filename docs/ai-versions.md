@@ -44,13 +44,15 @@ sudden-death 後實測（`v3-bench --workers=8 --repeats=30`，每格 60 場、C
 | --- | --- | --- | --- |
 | **v1** | 凍結（baseline） | 單層加權評分迴圈，**貪婪 1-ply**（只評當下 6 個候選） | `client/src/ai/v1/` |
 | **v2** | 凍結 | v1 的評分項 + **depth-4 forward-search maximin**（3 個悲觀場景）；**核心引擎與地圖策略解耦** | `client/src/ai/v2/`（`core/` + `classic/` + `pirate/`） |
-| **v3** | **最新 / live**（`AI_VERSION = 3`） | v2 引擎 + **連通性教條**（孤立時農到完成、連通後交戰）＋修掉 v2 農田凍結（道具 Manhattan 磁鐵 bug）＋多彈叢集農田＋保住領先撤退 | `client/src/ai/v3/`（`core/` + `classic/` + `pirate/`） |
+| **v3** | 凍結（BT 量尺 roster） | v2 引擎 + **連通性教條**（孤立時農到完成、連通後交戰）＋修掉 v2 農田凍結（道具 Manhattan 磁鐵 bug）＋多彈叢集農田＋保住領先撤退 | `client/src/ai/v3/`（`core/` + `classic/` + `pirate/`） |
+| **v4** | **最新 / live**（`AI_VERSION = 4`，研發中） | 由 v3 原封複製、收斂成**單一主幹策略**＝**控場流/Zoner**（BT 量尺下最強的單一策略）；先攻較弱的 classic 圖 | `client/src/ai/v4/`（`core/` + `classic/` + `pirate/`） |
 
 - 兩版各自是獨立、可並存的決策碼快照；版本本身就是持久化機制（無另存的 frozen baseline）。
 - **v2 地圖分軌（2026-06-19）**：v2 的決策引擎抽進 `client/src/ai/v2/core/`（`forwardSearch` / `scenarios` / `commitment`，map-agnostic），每張地圖的策略旋鈕收斂成一個 `MapProfile`（`client/src/ai/v2/{classic,pirate}/MapProfile.ts`，介面在 `v2/MapProfile.ts`）。`BotController` 依 `SimState.mapKind`（新增的非 hash 比賽常數）在第一次 `sample()` 選定 profile 並快取。**仍是同一個 `AI_VERSION = 2`、同一份註冊表**——classic/pirate 只是同版內依地圖派發的兩組策略，不是兩個版本。目前兩 profile 數值相同（== committed v2，純結構重構，行為與 matrix-bench 逐字未變）；之後各圖各自調 profile 即可，不互相影響。
 - 共用感知層在 `client/src/ai/common/`（危險圖 `dangerMap`、BFS、爆炸射線等，逐字對齊 sim 的 `Explosion.ts`）。
 - 兩版共用同一組 4 個策略 archetype：**Aggressor / Turtle / Gambler / ChaosV**（旋鈕在各自的 `BotConfig.ts` / `Strategies.ts`）。
-- 決定性契約（兩版皆守）：純函式 `(自帶 RNG, SimState) → InputFrame`；禁 `Math.random / Date.now / performance.now / Math.sqrt / sin / cos`；整數評分、固定候選順序、strict `>` 平手取第一。可用於連線房 lockstep 補位。
+- 決定性契約（各版皆守）：純函式 `(自帶 RNG, SimState) → InputFrame`；禁 `Math.random / Date.now / performance.now / Math.sqrt / sin / cos`；整數評分、固定候選順序、strict `>` 平手取第一。可用於連線房 lockstep 補位。
+- **v4 啟動（2026-06-21）**：由 v3 原封複製、收斂成**單一主幹策略**（依 §七 的單一策略版本流程）。主幹＝**控場流/Zoner**——**評估鏡頭自此改以 Bradley-Terry 量尺為準**（停看 v3-bench KILL-EDGE gate / fair-duel），而 BT 下 zoner 是兩圖都最強的單一策略（pirate #1 1757–1762、classic 頂端叢集，皆壓 farmer）。v4 launch 行為與 v3:zoner 逐字相同，再就地演進；**先攻較弱的 classic 圖**（baseline `bt-rank --target=v4:zoner`，逐對手殘差顯示 v3 發育/控場族是 classic 的硬對位）。
 
 ## 二、各版本說明
 
