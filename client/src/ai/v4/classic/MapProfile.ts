@@ -119,6 +119,8 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // trapper. The winning direction is killing power (blast reach) + positioning,
   // not more development. Keep the default.
   devEconBoostMax: 100,
-  // STRONGER TRAP COMMITMENT (v4-classic, direction 2): boost the seal reward 1.5x so the bot closes traps (bricks + foe's own bombs) harder vs the aggressive trapper instead of orbiting. Under bench.
-  sealWeightMult: 150,
+  // Seal reward left unscaled: 1.5x measured net-negative (trapper 55->50, zoner
+  // 58->55, farmer 57->53) — over-committing to a seal makes the bot overextend
+  // and lose. Seam kept neutral.
+  sealWeightMult: 100,
 });
