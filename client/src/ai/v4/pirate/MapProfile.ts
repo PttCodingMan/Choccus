@@ -40,11 +40,10 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   huntStartTick: 2400,
   // No ring override — pirate's Zoner keeps its own wider stand-off (tuning value).
   zoneStandoffTiles: 0,
-  // SUDDEN-DEATH SURVIVAL (v4-pirate): port the classic mirror-breaker — pre-
-  // position toward the late-hardening center as the shrink nears, to outlast the
-  // near-peer mirror (v3:zoner, the #2 we must beat by +50). No farming cost.
-  // Under bench.
-  shrinkSurvivalWeight: 4,
+  // SUDDEN-DEATH SURVIVAL (v4-pirate): the main mirror-breaker here (zoner 50->58
+  // at weight 4). Push to 6 — the open-map mirror responded strongly, so a
+  // stronger center pre-position may extend the lead toward +50. Under bench.
+  shrinkSurvivalWeight: 6,
   // Mid cannon dev target (shared default) — pirate is byte-unchanged.
   devTargetCannon: 3,
   // No corner-finish ring collapse on pirate (open map, untouched).
