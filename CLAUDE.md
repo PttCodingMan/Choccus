@@ -56,7 +56,7 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 
 **Server relay（`server/`）**：`main.py`＝dev relay（純 ws）、`serve.py`＝production（HTTP static + ws）。`relay/`：`RelayServer` / `TickCoordinator`（收齊輸入才放行該 tick；斷線 slot 補 neutral ghost）/ `Lobby` / `Room`。wire = 1-byte `MsgType` + MessagePack（id 定義在 `shared/protocol.ts`，Python 端手動鏡像）。relay **只中繼輸入、不跑 sim**。
 
-**AI 版本制（`client/src/ai/`）**：每個 `ai/vN/` 是獨立、可並存的決策碼快照——**版本本身就是持久化機制，無另存 frozen baseline**（`baselines/` 已移除）。一律透過 `ai/index.ts` 的 version-agnostic factory 取用，呼叫端（`main.ts`、sim-runner）**絕不**直接 import 某 version 資料夾。每圖預設 bot ＝該圖最強 v3 archetype（`v3-bench`），定義在 `ai/mapChampions.ts`。完整版本狀態 / 強度 / 評估流程見 **`docs/ai-versions.md`**。
+**AI 版本制（`client/src/ai/`）**：每個 `ai/vN/` 是獨立、可並存的決策碼快照——**版本本身就是持久化機制，無另存 frozen baseline**（`baselines/` 已移除）。一律透過 `ai/index.ts` 的 version-agnostic factory 取用，呼叫端（`main.ts`、sim-runner）**絕不**直接 import 某 version 資料夾。每圖預設 bot ＝該圖最強 archetype（`ai/mapChampions.ts`）；2026-06-21 起兩圖皆 **v4:zoner**（BT 量尺下兩圖都 #1）。完整版本狀態 / 強度 / 評估流程見 **`docs/ai-versions.md`**。
 
 ## 一、核心玩法
 
@@ -129,9 +129,11 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 ### 玩家初始值與上限
 
 - 生命 **1 條**（被融流炸到 → 糖殼困住；**同隊**隊友碰=解救（救援優先）、**敵隊**玩家碰到困住者 → 立即破殼淘汰、無人碰且超時也會破殼淘汰。重生模式才會重生）
-- 火力 2（上限 6）
-- 炮數 1（上限 5）
+- 火力 2（上限 **7**）
+- 炮數 1（上限 **6**）
 - 速度加成 0（每顆 +0.4，上限 +2.0）
+
+> 2026-06-21 重平衡：火力/彈數上限由 6/5 提高到 **7/6**（高爆風建構，做更大封鎖範圍）。caps 在 `shared/constants.ts`；改動會改變整個 sim → 須重 seed v3 BT 量尺（兩圖已重跑），golden 不需重 pin。
 
 > 困住 / 救援採「糖殼凝固」模型，**沒有暈眩 / 無敵**那套；困住可逆正好對應主題的「凝固糖殼」。
 
@@ -175,5 +177,6 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 
 - **v1**（凍結 baseline，`client/src/ai/v1/`）＝貪婪 1-ply 單層加權評分（不前瞻）。
 - **v2**（凍結，`AI_VERSION = 2`，`client/src/ai/v2/`）＝在 v1 評分上加 **depth-4 forward-search maximin**（3 個悲觀場景）。引擎在 `v2/core/`＋每圖 `MapProfile`，`BotController` 依 `SimState.mapKind` 派發。
-- **v3**（**最新 / live**，`AI_VERSION = 3`，`client/src/ai/v3/`）＝由 v2 原封複製後演進（v2 不動）。核心是**連通性教條**（孤立＝無開放路徑到任何敵人時農到完成，連通後交戰）＋四個關鍵改進：①修掉 v2 的「道具 Manhattan 磁鐵」bug（看得到拿不到的道具讓 bot 卡死不農——最大單一突破）②道具優先 cannon/speed 過 fire ③近距才完整保命（`survEnough` 依敵人距離切換）④多彈叢集農田（`multiBombFarm`，撤退時用多餘炮數連放、每顆過閘門）⑤保住領先撤退（`protectLead`，classic：連通且道具領先時遠離敵人，別被封路炸死）。**演進史：舊計分（超時靠道具 tiebreak）classic 81.7% / pirate 80.8% → 2026-06-20「超時＝挑戰者判輸」後崩到 classic 10.8% / pirate 2.5%（幾乎全超時、皆 FAIL）→ 同日新增 sudden-death 縮圈（`sim/SuddenDeath.ts`）消滅 farm-to-timeout，回升到 classic 69.2%（best=farmer）/ pirate 81.7%（best=zoner）、超時率 0%，KILL-EDGE PASS。** 詳見 `docs/ai-versions.md`。
-- **不做逐 tick golden hash 鎖 AI**：回歸保障由 `determinism.test.ts`（決定性）＋ `v3-bench`（80% 門檻）＋機制診斷負責。改完活的 AI（v3）後在 `tools/sim-runner/` 跑 `npm run v3-bench`（v3 vs v2，含門檻）＋ `npm test` ＋ `npm run lint`。
+- **v3**（凍結＝**BT 量尺 roster**，`AI_VERSION = 3`，`client/src/ai/v3/`）＝由 v2 演進：**連通性教條**＋修掉「道具 Manhattan 磁鐵」bug、道具優先 cannon/speed、近距才完整保命、多彈叢集農田、保住領先撤退。7-archetype 刻意非遞移 roster，現作為 v4/v5 的固定 Bradley-Terry 量尺（`bt-history/{classic,pirate}.json`）。詳見 `docs/ai-versions.md`。
+- **v4**（**最新 / live**，`AI_VERSION = 4`，`client/src/ai/v4/`）＝由 v3 收斂成**單一主幹策略 Zoner**，評估改以 **Bradley-Terry 量尺**為準。兩圖各一套 `MapProfile`（同 archetype、依 `mapKind` 派發兩組旋鈕）。三個有效機制：**長射程發育 `devTargetFire`=7**（最大槓桿）、**sudden-death 縮圈生存走位 `shrinkSurvivalWeight`**（破鏡像主槓桿，classic 4 / pirate 6）、**角落封殺 `cornerFinish`**（classic on）。配合遊戲 caps 提高（fire 7 / cannon 6）。**結果 classic #1 +42、pirate #1 +48**（皆對第二名）。**天花板＝v3:trapper 是 v4 同流派的「封鎖鏡像」**，所有「更兇/更發育/更早交戰」槓桿都把 trapper 讓掉，只有 fire 射程＋縮圈走位正交有效（已拉滿）。詳見 `docs/ai-versions.md` §八。
+- **不做逐 tick golden hash 鎖 AI**：回歸保障由 `determinism.test.ts`（決定性）＋ **`bt-rank`（BT 量尺就位）**＋機制診斷負責。改完活的 AI（v4）後在 `tools/sim-runner/` 跑 `npm run bt-rank -- --target=v4:zoner --map=<圖>`（調哪張圖跑哪張）＋ `npm test` ＋ `npm run lint`。caps 若再動須重 `bt-seed` 兩圖。
