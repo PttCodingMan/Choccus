@@ -463,6 +463,11 @@ export class BotController {
    * `MapProfile.shrinkSurvivalWeight`); 0 = off. Read by leafReward. */
   private curShrinkWeight = 0;
 
+  /** Effective CANNON development target for THIS decision (per-map
+   * `MapProfile.devTargetCannon`); read by developmentFactor. Classic raises it
+   * to the max so the bot accumulates a multi-bomb surplus for corner seals. */
+  private curDevTargetCannon = DEV_TARGET_CANNON;
+
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
   private lastFoeTile = -1;
@@ -1413,15 +1418,19 @@ export class BotController {
    * scale economy UP and attack DOWN while under-developed.
    */
   private developmentFactor(fire: number, cannon: number): number {
-    // Progress, in "upgrade points", from spawn toward the mid target.
+    // Progress, in "upgrade points", from spawn toward the target. The CANNON
+    // target is per-map (this.curDevTargetCannon): classic drives it to the full
+    // max so the bot keeps farming to a cannon SURPLUS — the fuel for offensive
+    // multi-bomb corner seals — instead of declaring itself "developed" at cannon 3.
+    const targetCannon = this.curDevTargetCannon;
     const targetSpan =
       DEV_TARGET_FIRE -
       PLAYER_START_FIRE +
-      (DEV_TARGET_CANNON - PLAYER_START_CANNON);
+      (targetCannon - PLAYER_START_CANNON);
     if (targetSpan <= 0) return 0;
     const got =
       Math.max(0, Math.min(DEV_TARGET_FIRE, fire) - PLAYER_START_FIRE) +
-      Math.max(0, Math.min(DEV_TARGET_CANNON, cannon) - PLAYER_START_CANNON);
+      Math.max(0, Math.min(targetCannon, cannon) - PLAYER_START_CANNON);
     // 100 when got = 0 (just spawned), 0 when got >= targetSpan (developed).
     return Math.max(0, Math.min(100, 100 - Math.floor((got * 100) / targetSpan)));
   }
@@ -2204,6 +2213,7 @@ export class BotController {
         ? profile.zoneStandoffTiles
         : (this.tuning.zoneStandoff ?? 0);
     this.curShrinkWeight = profile.shrinkSurvivalWeight;
+    this.curDevTargetCannon = profile.devTargetCannon;
 
     const huntStart = profile.huntStartTick;
     const urgency =

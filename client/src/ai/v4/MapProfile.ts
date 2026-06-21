@@ -171,4 +171,14 @@ export interface MapProfile {
    * — this only biases WHICH safe tile is preferred, never overrides safety.
    */
   readonly shrinkSurvivalWeight: number;
+  /**
+   * CANNON development target (upgrade points) used by the development factor: the
+   * bot keeps the economy boost + brick-clearing growth pull at strength until its
+   * cannon count reaches this, then declares itself "developed". The shared default
+   * is 3 (mid), which means the bot never accumulates the cannon SURPLUS needed to
+   * wall a corner with 5-6 bombs (the offensive multi-bomb pincer is starved of
+   * cannons). Classic raises it to the max (PLAYER_MAX_CANNON=5) so the bot farms
+   * to a real surplus and can box a cornered foe; pirate keeps the mid default.
+   */
+  readonly devTargetCannon: number;
 }

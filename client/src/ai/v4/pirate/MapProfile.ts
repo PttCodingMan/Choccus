@@ -42,4 +42,6 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   zoneStandoffTiles: 0,
   // No shrink-survival pull on pirate (open map already wins; keep it untouched).
   shrinkSurvivalWeight: 0,
+  // Mid cannon dev target (shared default) — pirate is byte-unchanged.
+  devTargetCannon: 3,
 });

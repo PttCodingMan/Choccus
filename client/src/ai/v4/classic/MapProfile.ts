@@ -93,4 +93,10 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // only reacts to already-hard tiles. This is the main lever to break the classic
   // endgame mirror ties (where knob-tuning the fight itself washed out).
   shrinkSurvivalWeight: 2,
+  // DEVELOP TO A CANNON SURPLUS (v4-classic): drive the cannon dev target to the
+  // max (5) instead of stopping at 3, so the bot keeps farming until it can wall a
+  // cornered foe with 5-6 bombs (the offensive multi-bomb pincer needs the spare
+  // cannons). Directly addresses "develops too slowly / wastes bombs / never
+  // exploits corners" — under-development was starving the corner-trap tactic.
+  devTargetCannon: 5,
 });
