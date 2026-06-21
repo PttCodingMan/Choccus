@@ -86,10 +86,9 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // TIGHTEN THE ZONER RING (v4-classic): radius 2 (vs the archetype's 4) so the
   // bot compresses into kill range on the cramped lattice instead of orbiting a
   // near-peer at arm's length (which mirrors to a sudden-death coin-flip). This is
-  // the zoner-specific kill lever; sweep alongside huntStartTick. With the long
-  // blast (fire 6) the cross reaches from further, so a wider ring (3) may seal
-  // from outside an aggressor's own range. Under bench.
-  zoneStandoffTiles: 3,
+  // the zoner-specific kill lever. Measured: 2 is best — widening to 3 loosens
+  // the seal pressure (zoner 58->54, farmer 57->55). Keep 2.
+  zoneStandoffTiles: 2,
   // SUDDEN-DEATH SURVIVAL (v4-classic, NEW mechanism): pre-position toward the
   // late-hardening center as the shrink nears so the bot outlasts a near-peer that
   // only reacts to already-hard tiles. This is the main lever to break the classic
