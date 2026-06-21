@@ -50,12 +50,11 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // robust). 6 keeps every top matchup healthy. weight 7 also drops trapper
   // (58->55) with no mirror gain — 6 is the confirmed peak (+48 lead).
   shrinkSurvivalWeight: 6,
-  // Mid cannon dev target — RAISED to 4 for v5 (was 3). The anti-entrapment
-  // defense bought a large trapper margin (pirate vs trapper ~57-62%), so the
-  // farming-intensity penalty the v4 analysis saw is now affordable; the diag
-  // showed pirate-mirror losses carry a negative dev-gap, and more cannons = more
-  // seal power to close first in the shrink. Under A/B (pirate-only).
-  devTargetCannon: 4,
+  // Mid cannon dev target (shared default). RAISING to 4 was measured a WASH on
+  // the pirate mirror (still exactly 50.0% over 120 games) and the v4 analysis
+  // found it farmer-negative on the ladder — the symmetric mirror does not reward
+  // out-developing. Keep 3.
+  devTargetCannon: 3,
   // No corner-finish on pirate: measured neutral-to-negative on the open map
   // (farmer 55->53, mirror/trapper flat) — rarely fires and diving adds risk.
   cornerFinish: false,
@@ -74,4 +73,8 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // coupled to a farming-tempo loss vs the v3 dev-racers (pirate BT 1809->1766);
   // pirate wins the ladder via the entrap term alone (BT #1, +22 over v4).
   robustRefuge: false,
+  // ...but turn robust refuge ON LATE (shrink approaching): by then farming is
+  // over so there is no tempo cost, while the anti-seal benefit lands in the
+  // decisive shrink endgame where every pirate-mirror loss occurs. Under A/B.
+  robustRefugeLate: true,
 });
