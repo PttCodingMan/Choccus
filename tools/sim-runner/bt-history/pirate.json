@@ -65,9 +65,9 @@
     {
       "a": "v3:farmer",
       "b": "v4:zoner",
-      "winsA": 92.5,
-      "winsB": 107.5,
-      "draws": 33,
+      "winsA": 89.5,
+      "winsB": 110.5,
+      "draws": 43,
       "games": 200,
       "meta": {
         "repeats": 100,
@@ -125,9 +125,9 @@
     {
       "a": "v3:hunter",
       "b": "v4:zoner",
-      "winsA": 9.5,
-      "winsB": 190.5,
-      "draws": 3,
+      "winsA": 11,
+      "winsB": 189,
+      "draws": 6,
       "games": 200,
       "meta": {
         "repeats": 100,
@@ -173,9 +173,9 @@
     {
       "a": "v3:reactive",
       "b": "v4:zoner",
-      "winsA": 7,
-      "winsB": 193,
-      "draws": 0,
+      "winsA": 6.5,
+      "winsB": 193.5,
+      "draws": 1,
       "games": 200,
       "meta": {
         "repeats": 100,
@@ -211,7 +211,7 @@
       "b": "v4:zoner",
       "winsA": 52.5,
       "winsB": 147.5,
-      "draws": 7,
+      "draws": 3,
       "games": 200,
       "meta": {
         "repeats": 100,
@@ -233,9 +233,9 @@
     {
       "a": "v3:trapper",
       "b": "v4:zoner",
-      "winsA": 83.5,
-      "winsB": 116.5,
-      "draws": 33,
+      "winsA": 82.5,
+      "winsB": 117.5,
+      "draws": 29,
       "games": 200,
       "meta": {
         "repeats": 100,
@@ -245,9 +245,9 @@
     {
       "a": "v3:zoner",
       "b": "v4:zoner",
-      "winsA": 83.5,
-      "winsB": 116.5,
-      "draws": 21,
+      "winsA": 76,
+      "winsB": 124,
+      "draws": 12,
       "games": 200,
       "meta": {
         "repeats": 100,
