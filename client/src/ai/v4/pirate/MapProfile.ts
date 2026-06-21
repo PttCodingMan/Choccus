@@ -45,14 +45,13 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // stronger center pre-position extends the lead. Measured sweet spot: 6.
   // weight 4: zoner 58 | weight 6: zoner 60, trapper 58 | weight 8: zoner 62 but
   // trapper 54 (over-centralizing neglects the trapper fight — net wash, less
-  // robust). 6 keeps every top matchup healthy.
-  shrinkSurvivalWeight: 6,
+  // robust). 6 keeps every top matchup healthy. Probe 7 to clear +50 cleanly.
+  shrinkSurvivalWeight: 7,
   // Mid cannon dev target (shared default) — pirate is byte-unchanged.
   devTargetCannon: 3,
-  // CORNER-FINISH (v4-pirate): port from classic. Open map has few corners so it
-  // fires rarely (only on a genuinely cornered foe, free space <=3), but when a
-  // foe IS boxed it dives to seal — a low-risk additive lever to clear +50.
-  cornerFinish: true,
+  // No corner-finish on pirate: measured neutral-to-negative on the open map
+  // (farmer 55->53, mirror/trapper flat) — rarely fires and diving adds risk.
+  cornerFinish: false,
   // GROW A LONGER BLAST (v4-pirate): port the classic winner — drive the fire dev
   // target to the new max 7 so the bot builds the longest cross (stronger kills /
   // seals on the open map too). Few pickups → no over-farming. Under bench.
