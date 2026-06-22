@@ -2,14 +2,14 @@
 
 > 🌐 **Language / 語言**：[中文（主要 / primary）](./README.md) ｜ **English (this page)**
 
-A chocolate-themed real-time online multiplayer game in the style of Bomberman.
-Place chocolate bombs, detonate them in a cross-shaped melt pattern, trap
-opponents in sugar-shell casings, and rescue teammates before time runs out.
+A chocolate-themed real-time online multiplayer game with grid-based bombs and
+cross-shaped blasts. Place chocolate bombs, detonate them in a cross-shaped melt
+pattern, trap opponents in sugar-shell casings, and rescue teammates before time
+runs out.
 
 > This file is the quick-start guide (install, run, deploy, test, architecture).
-> The full game design doc (theme decisions, legal boundaries, tuning values, AI
-> strategy) lives in [`CLAUDE.md`](./CLAUDE.md); the authoritative AI version
-> status and eval flow lives in [`docs/ai-versions.md`](./docs/ai-versions.md).
+> The AI version status and eval flow lives in
+> [`docs/ai-versions.md`](./docs/ai-versions.md).
 
 ## Prerequisites
 
@@ -210,4 +210,4 @@ docs/ai-versions.md      — authoritative AI version status / strength / eval f
 
 > The deterministic core (`client/src/sim/`) is the contract that makes lockstep
 > netcode and bot backfill possible: same seed + same per-tick inputs ⇒
-> byte-identical state on every client. See [`CLAUDE.md`](./CLAUDE.md) for the full design doc.
+> byte-identical state on every client.

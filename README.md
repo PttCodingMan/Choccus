@@ -2,12 +2,11 @@
 
 > 🌐 **語言 / Language**：**中文（本頁）** ｜ [English](./README.en.md)
 
-巧克力主題的即時線上多人對戰遊戲，玩法類似「炸彈超人」。放下巧克力炸彈 →
+巧克力主題的即時線上多人對戰遊戲：在格子地圖上放下巧克力炸彈 →
 以十字熔流引爆 → 把對手凝固在糖殼裡困住 → 在時間耗盡前救援隊友。
 
-> 本檔為快速上手指南（安裝、執行、部署、測試、架構）。完整的遊戲設計文件
-> （主題決策、法律邊界、數值參數、AI 策略）請見 [`CLAUDE.md`](./CLAUDE.md)；
-> AI 版本的權威狀態與評估流程請見 [`docs/ai-versions.md`](./docs/ai-versions.md)。
+> 本檔為快速上手指南（安裝、執行、部署、測試、架構）。AI 版本的狀態與
+> 評估流程見 [`docs/ai-versions.md`](./docs/ai-versions.md)。
 
 ## 環境需求
 
@@ -204,4 +203,3 @@ docs/ai-versions.md      — 權威的 AI 版本狀態 / 強度 / 評估流程
 
 > 決定性核心（`client/src/sim/`）是讓 lockstep 連線與 bot 補位成為可能的契約：
 > 同 seed + 同逐 tick 輸入 ⇒ 每個 client 上 byte-identical 的 state。
-> 完整設計文件見 [`CLAUDE.md`](./CLAUDE.md)。
