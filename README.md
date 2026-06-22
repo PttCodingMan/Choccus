@@ -111,7 +111,7 @@ podman run -d -p 8080:8080 -p 8765:8765 choccus
 GitHub Container Registry：
 
 ```sh
-podman pull ghcr.io/codingman/choccus:latest
+podman pull ghcr.io/pttcodingman/choccus:latest
 ```
 
 （套件初始為 private — 用 PAT 拉取，或在 repo 的 **Packages** 設定裡設為 public。）
@@ -166,16 +166,8 @@ npm test
 server/.venv/bin/python -m pytest server/tests -q
 ```
 
-### AI 基準測試（改完 bot 邏輯後執行）
-
-```sh
-cd tools/sim-runner
-npm run v3-bench         # v3 對 v2 的 1v1 勝率＋80% 門檻（權威評估）
-npm run bt-rank -- --target=v5:zoner --map=classic   # 把新策略放上 Bradley-Terry 量尺
-npm run v5-probe -- --target=v5:zoner                 # 對前沿封鎖者的快速 A/B 探針
-```
-
-權威的 AI 版本狀態、強度與評估流程見 [`docs/ai-versions.md`](./docs/ai-versions.md)。
+> AI bot 的基準測試與評估流程（`tools/sim-runner/` 下的各項 bench）屬於內部
+> 開發迴圈，自架不需要。權威說明見 [`docs/ai-versions.md`](./docs/ai-versions.md)。
 
 ---
 

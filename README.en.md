@@ -113,7 +113,7 @@ Pushing to `main` builds and publishes the image to GitHub Container Registry
 via `.github/workflows/build-image.yml`:
 
 ```sh
-podman pull ghcr.io/codingman/choccus:latest
+podman pull ghcr.io/pttcodingman/choccus:latest
 ```
 
 (The package starts private — pull with a PAT, or set it public once in the
@@ -170,16 +170,10 @@ npm test
 server/.venv/bin/python -m pytest server/tests -q
 ```
 
-### AI benchmarks (after changing bot logic)
-
-```sh
-cd tools/sim-runner
-npm run v3-bench         # v3 vs v2 1v1 win-rate + 80% gate (authoritative eval)
-npm run bt-rank -- --target=v5:zoner --map=classic   # place a new strategy on the Bradley-Terry ladder
-npm run v5-probe -- --target=v5:zoner                 # fast A/B probe vs the frontier blockers
-```
-
-See [`docs/ai-versions.md`](./docs/ai-versions.md) for the authoritative AI version status, strengths, and eval flow.
+> The AI bot benchmarks and eval flow (the various benches under
+> `tools/sim-runner/`) are an internal development loop — not needed for
+> self-hosting. See [`docs/ai-versions.md`](./docs/ai-versions.md) for the
+> authoritative reference.
 
 ---
 
