@@ -9,3 +9,4 @@ __pycache__/
 
 # OS
 .DS_Store
+tools/sim-runner/screen-baseline-*.json
