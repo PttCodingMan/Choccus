@@ -150,7 +150,7 @@ npx tsx src/kill-probe.ts --v3=trapper --v2=aggressor --map=classic  # 獵殺機
 npx tsx src/v2-rank.ts -- --map=classic                  # 找該圖最強 v2（gate 目標）
 # BT 量尺（v4／v5 開發）
 npm run bt-rank -- --target=v4:zoner --map=classic       # 放上 v3 量尺 → Elo ladder ＋逐對手殘差
-npm run v5-probe -- --target=v5:<arch>                   # 新策略快速 A/B：vs 前沿封鎖者（v4:zoner＋v3:trapper）直接 CRN，不寫 history
+npm run v5-probe -- --target=v6:<arch>                   # 新策略快速 A/B：vs 前沿封鎖者（預設 v5:zoner＋v3:trapper）直接 CRN，不寫 history
 # 歷史工具
 npm run matrix-bench      # 8 agent 1v1 矩陣（v1 vs v2 歷史）
 npm run version-bench     # 4-bot FFA，活 bot vs 前一版
@@ -221,7 +221,7 @@ v3 從 v2 原封複製後演進（v2 凍結不動）。**2026-06-20 大改：勝
 - `bt-history.ts`：per-map 持久化對戰歷史（`bt-history/{classic,pirate}.json`），canonical `v<N>:<arch>` 配對 key、**upsert-by-pair**（重跑取代不重複計數）。
 - `bt-seed.ts`（`npm run bt-seed`）：跑 v3 內部 round-robin，寫出全新量尺。**v3 變動時重跑**。
 - `bt-rank.ts`（`npm run bt-rank -- --target=v4:<arch>`）：跑 target vs v3 池 → upsert → 對整份歷史聯合重擬合 → 印全域 ladder（target 就位）＋逐對手殘差。`--no-write` 乾跑。
-- `v5-probe.ts`（`npm run v5-probe -- --target=v5:<arch>`）：**新策略快速 A/B 探針**——跑 target vs **前沿封鎖者**（預設 `v4:zoner`＋`v3:trapper`，`--opponents` 可指定任意 `v<N>:<arch>` 混版本對手）直接 CRN 對打，印逐對手勝率、對 live 冠軍（最高版本對手）的 **SHIP-GATE 判定**，外加可 diff 的 SUMMARY 行。**不擬 BT、不寫 history**，是純開發迴圈工具：改前/改後各跑一次比勝率位移。預設 `--repeats=40`，`--map` 過濾。
+- `v5-probe.ts`（`npm run v5-probe -- --target=v<N>:<arch>`）：**新策略快速 A/B 探針**——跑 target vs **前沿封鎖者**（預設＝現役冠軍 `v5:zoner`＋鏡像 `v3:trapper`，`--opponents` 可指定任意 `v<N>:<arch>` 混版本對手）直接 CRN 對打，印逐對手勝率、對 live 冠軍（最高版本對手）的 **SHIP-GATE 判定**，外加可 diff 的 SUMMARY 行。**不擬 BT、不寫 history**，是純開發迴圈工具：改前/改後各跑一次比勝率位移。預設 `--repeats=40`，`--map` 過濾。
 
 ```bash
 cd tools/sim-runner

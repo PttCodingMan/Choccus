@@ -38,7 +38,7 @@ Monorepo：npm workspaces = `client` + `tools/sim-runner`；Python relay 在 `se
 | `npm run matrix-bench` | 8-agent（v1×4 + v2×4）1v1 矩陣（v1 vs v2 歷史） |
 | `npm run bt-seed -- --repeats=60` | 建 **Bradley-Terry 量尺**：v3 內部 round-robin 寫 `bt-history/{classic,pirate}.json`（v3 變動才重跑） |
 | `npm run bt-rank -- --target=v4:<arch>` | 把新版單一策略放上 BT 量尺：vs v3 池 → 聯合重擬合 → 全域 Elo ladder ＋逐對手殘差（詳見 `docs/ai-versions.md` §七） |
-| `npm run v5-probe -- --target=v5:<arch>` | **新策略快速 A/B 探針**（不寫 history、不擬 BT）：target vs **前沿封鎖者**（預設 `v4:zoner`＋`v3:trapper`，可 `--opponents=v<N>:<arch>,...` 混版本）直接 CRN 對打，印逐對手勝率＋對 live 冠軍的 SHIP-GATE 判定。改前/改後各跑一次比勝率位移；`--map` 過濾、`--repeats=40` 預設。理由＝新家族對 v4 的關係 BT 只能遞移推斷、最不可信，必須直接量（詳見 `docs/ai-versions.md` §七） |
+| `npm run v5-probe -- --target=v5:<arch>` | **新策略快速 A/B 探針**（不寫 history、不擬 BT）：target vs **前沿封鎖者**（預設＝現役冠軍 `v5:zoner`＋鏡像 `v3:trapper`，可 `--opponents=v<N>:<arch>,...` 混版本）直接 CRN 對打，印逐對手勝率＋對 live 冠軍的 SHIP-GATE 判定。改前/改後各跑一次比勝率位移；`--map` 過濾、`--repeats=40` 預設。理由＝新家族對現役 bot 的關係 BT 只能遞移推斷、最不可信，必須直接量（詳見 `docs/ai-versions.md` §七） |
 | `npm run v5-diag -- --target=v5:zoner [--opponent=v3:trapper]` | **失敗軌跡診斷**：跑 target vs 對手，逐 tick 追 target 的逃生分支數 / 對手距離 / 自由空間 / 發育差；死亡時分類（SEALED 死胡同／OPEN 時機／TRAPPED 糖殼）並印死亡當下 / 1 秒前 / 10 秒前的軌跡——「輸掉的原因十秒前就有跡象」。純分析、不寫 history |
 | `npm run version-bench` | 活 bot vs 凍結前一版，4-bot FFA，兩圖，看 ΔWinRate / ΔAvgRank |
 | `npm run replay -- fixtures/<f>.json [--jsonl]` | 跑 replay，逐 tick 印 `tick,hashHex` |
