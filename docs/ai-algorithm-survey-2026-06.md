@@ -196,3 +196,15 @@ Nash 不動點成立；你的 v5-vs-v4 pirate ~50% 其實是**因為 pirate 的 
 3. Omidshafiei et al., *α-Rank*（Nature 2019）：`arxiv 1903.01373` ＋ Balduzzi, *Open-ended Learning*（ICML 2019）：`arxiv 1901.08106`
 4. Gao et al., *On Hard Exploration … Pommerman*（RL 難因）：`arxiv 1907.11788`；Skynet：`arxiv 1905.01360`
 5. Jacob et al., *Integer-Arithmetic-Only Inference*：`arxiv 1712.05877` ＋ Stockfish NNUE docs（整數 eval 活證明）
+
+---
+
+## 5. v6 原型實測結果（2026-06-22，三條都試了）
+
+| # | 原型 | 狀態 | 結果 |
+| --- | --- | --- | --- |
+| **①** | **α-Rank / Nash-averaging 評估**（`meta-rank`） | ✅ **出貨**（committed `1d9fe27`） | 兩圖跑出：**v5:zoner 是 dominant strategy**（α-Rank sink / Nash 100% support）＝**無 top-level 環，BT 的 #1 可信**；RPS 環在 mid-pool（farmer/zoner/trapper 三法三序）。Clone check 實證回答 v6 入池問題：**Nash 給被支配的近 clone v4:zoner ~0%、不扭曲全池** → v4+v5 同時入池在 Nash-averaging 下無害（mean-WR/Elo 會被拉偏），gate 對 Nash-support 冠軍 v5:zoner。 |
+| **②** | **df-pn / MCTS-Solver 強迫擊殺證明器** | ⏸ **未建**（證據預判否決） | v5 已有 `tryFinishingMove` ＋ depth-2 `tryForcedTrap`（B1→B2）。repo **§六自己的 ablation**：「minimax forced-trap 加下去 25%→不變；瓶頸是接觸機會」＝擊殺轉化已飽和。再砸 df-pn surgery 被自家數據預判為 null → 不值得，除非先解接觸稀缺。 |
+| **③** | **線上對手建模 + 單調切換**（`adaptDefense`） | ❌ **試了→還原**（`37879e9` 建、`eecd569` revert） | flag-gated 原型：線上估「sealer aggression」→ 持續高就單調拉高防守旋鈕（robustRefuge+corridorGate）。**pirate A/B（CRN repeats=40）淨負**：vs trapper **59.4→55.0**、vs farmer 58.8→57.5、vs v4 50.6→50.0。關鍵：**比 static-off(59.4) 與 static-on(62.5) 都差** → 正是 King/Fern/Hostetler「naive 切換可能比最佳固定策略更差」的實證；我只保證「caution 單調」非「value 單調」，觸發在交戰中誤engage、neuter 自身進攻。**正解＝forward-sim value-dominance gate（較大的建置），非此 cheap trigger。** |
+
+> **總結**：三條只有 ①（評估層）是淨正、已出貨；② 被 repo 自家 ablation 預判飽和、未建；③ 是有理論依據但 naive 實作淨負、已還原（要做對得上 forward-sim value gate）。v5 主幹**逐位元未動**（②未碰、③已 revert）。**最大可行突破仍是評估升級（①）＋（若投資）③ 的 value-gated 完整版**。
