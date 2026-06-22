@@ -1,6 +1,12 @@
 # AI 版本狀態（Choccus Bot）
 
-> 最後更新：2026-06-21（**v5 上線＝v4 Zoner 主幹 ＋ 全新正交「防守軸：逃生路線冗餘」**。詳見 §九。
+> 最後更新：2026-06-22（**pirate 上限調查 ＋ 死亡軌跡/空間診斷**。詳見 §十。committed v5 不變。
+> 重點：①新工具 **`v5-trace`**（空間死亡回放，看 seal 怎麼合圍）。②**pirate 死因＝收圈最後一格的
+> 「對稱擠壓」**（縮圈牆包死、非對手；foe bombs=0），bot 走位翻不了的結構性 50% 對稱牆——pirate
+> 已在策略族最佳點。③**classic 死因＝trapper 的「單寬走廊 vChain 封殺＋自堵」**，對症修法＝走廊感知
+> 放彈閘門（v6 方向，未實作）。④八個槓桿（進攻重掃/openRefuge/tempo-bomb/shrink-aware survivability
+> 等）全 A/B 否決還原——shrink-aware 名目過 v4 gate 但死亡型態沒變、淨掉量尺。）
+> 最後更新前一版：2026-06-21（**v5 上線＝v4 Zoner 主幹 ＋ 全新正交「防守軸：逃生路線冗餘」**。詳見 §九。
 > 重點：①v4 的天花板（v3:trapper 封鎖鏡像）與玩家實測死法是同一件事——**躲死胡同／站位不安全→被補一顆封殺彈打死**；先前「只有進攻槓桿、全被 trapper 讓掉」的結論只試過進攻面，**防守面（逃生冗餘）正交未試**。②v5 兩機制：**反封殺位置罰分 `entrapWeight`**（罰逃生分支<2 的死胡同格、按敵接近度加權）＋**穩健逃生點 `robustRefuge`**（放彈後逃向分支最多的格；classic 開、pirate 關）。③結果：**BT 量尺兩圖 #1（v4 退第二，classic +61 / pirate +18，皆 ≥1 SD）**、直接對 v4 兩圖 ≥ 勝（classic 55.6%、pirate 50%）、對 v3:trapper ~54%→**61–63%**（天花板突破）。④新工具 **`v5-diag`**（失敗軌跡診斷：死亡分類＋死前 10 秒軌跡）。
 > 最後更新前一版：2026-06-21（**v4 上線並兩圖各自調參完成 + 遊戲重平衡 caps**。詳見 §八。
 > 重點：①遊戲 caps 提高（火力上限 6→**7**、彈數上限 5→**6**），golden 全綠、**兩圖 BT 量尺已用新 caps 重 seed**；②v4 主幹＝**控場流/Zoner**，評估改以 **Bradley-Terry 量尺**為準；③新增三個機制（**長射程發育 fire-7**、**sudden-death 縮圈生存走位 shrinkSurvival**、**角落封殺 cornerFinish**）；④結果 **classic #1 +42、pirate #1 +48**（皆對第二名）；⑤天花板＝**trapper 是 v4 同流派的「封鎖鏡像」**，所有「更兇/更發育/更早交戰」槓桿都會把 trapper 讓掉，故領先卡在這。⑥工具：`bt-rank`/`bt-seed` 新增 `--map` 過濾，單圖評估快 ~5×。⑦新增 **`v5-probe`** 新策略快速 A/B 探針（vs 前沿封鎖者 `v4:zoner`＋`v3:trapper` 直接 CRN、不寫 history、印 SHIP-GATE）；移除 4 個 v2 期過時 throwaway 評估腳本（`probe-classic`/`probe-map`/`sweep-classic`/`v3-sweep`，詳見 §七末）。）
@@ -314,3 +320,60 @@ v5 對 **v3:trapper 仍是 RPS 環上相對偏弱的方向**（trapper 是封鎖
 `bt-rank --target=v5:zoner --map=<m>`（BT 就位）＋ `v5-probe --target=v5:zoner`（直接對 v4 ship-gate）。
 caps 若再動 → 重 `bt-seed` 兩圖。**v6 起建議把 `v4:zoner`／`v5:zoner` 都已在 committed 量尺中，
 新版直接對前沿量。**
+
+## 十、pirate 上限調查 ＋ 死亡軌跡/空間診斷（2026-06-22）
+
+> 方法論：先用 **死亡軌跡診斷**（死因十秒前就有跡象）找出 v5 到底「怎麼輸」，再針對死因
+> 設計修法、A/B 測。比「猜槓桿再測」嚴謹得多。新增**空間回放**工具看 seal 怎麼合圍。
+> **結論：pirate 已在「Zoner+entrap」策略族的最佳點（鏡像是結構性對稱牆，bot 走位翻不了）；
+> classic 的天花板＝trapper 的「單寬走廊 vChain 封殺」，已用 v5-trace 看到具體長相，對症修法
+> ＝走廊感知放彈閘門（尚未實作，v6 方向）。** 本次所有改動皆 A/B 否決後還原，committed v5 不變。
+
+### 新工具：`v5-trace`（空間死亡回放）
+`tools/sim-runner/src/v5-trace.ts`（`npm run v5-trace -- --target=v5:zoner --opponent=v4:zoner
+--map=<m> --nth=0`）。`v5-diag` 給的是**聚合數字**（分支數/敵彈數）；`v5-trace` 兩遍法（CRN
+決定性）找出第 N 個敗局、重跑、印**死前 10s/3s/1s/死亡**的 ASCII 盤面（`@`我`F`敵`B`我彈
+`X`敵彈`!`即將致命`#`硬磚`o`軟磚`·`開放），直接**看見** seal 怎麼合圍。
+
+### pirate 死因＝收圈最後一格的「對稱擠壓」（非對手所為）
+`v5-diag`（v5 vs v4 鏡像，pirate）：**35/35 敗局全在縮圈期、27 個 SEALED（死胡同）**，死時
+敵人在 ~4.9 格外、身邊敵彈僅 ~0.5、發育打平；逃生分支 **2.34(死前10s)→1.23(1s)→0.37(死)**
+——10 秒前還跟勝局一樣安全。`v5-trace` 證實：**全程 foe bombs = 0**，縮圈牆把全盤硬化成一小塊
+pocket、bot 拿到較差的格→被牆包死。**對手沒有封你，是縮圈在封；對手只是贏了搶最後存活格的硬幣。**
+兩個用相同邏輯的 bot 爭同一格→ ~50/50，**bot 走位無法把對稱變不對稱**（`shrinkSurvivalWeight`
+已做 30s 早期中心漂、survivability 縮圈感知的 look-ahead 只有 3s＝看到牆時已被困）。
+
+### classic 死因＝trapper 的「單寬走廊 vChain 封殺」＋自堵
+`v5-diag`（classic）：**28/33 TRAPPED（糖殼）、主要中盤、死時身邊 ~2.3 顆敵彈**。`v5-trace`
+看到具體死法：v4 把 bot 趕進**單寬垂直走廊**（東西皆硬磚），北端用 vChain 連下 2–3 顆敵彈封死，
+而 **bot 自己**撤退放的彈把南端退路也堵住 → 自我密封。放彈時 `validateBombRefugePessimistic`
+驗證的是「往北逃」，但 v4 **隨後補彈**把那條已驗證走廊逃生道切斷＝閘門的盲點。這就是 §八/§九
+點名的 **trapper binding ceiling 的具體長相**。
+
+### 被否決的 pirate 槓桿（皆 entrap 開著、CRN repeats=40，對 v4 ship-gate / trapper / farmer）
+| 槓桿 | vs v4 | vs trapper | vs farmer | 判定 |
+| --- | --- | --- | --- | --- |
+| baseline（committed v5） | 50.6% | 59.4% | ~57% | — |
+| 進攻：econ200 + cannon4 | 45.6% | 60.0% | — | 破鏡像 |
+| 進攻：huntStart1200 + ring2 | 43.8% | 56.9% | — | 破鏡像 |
+| 進攻：cornerFinish on | 48.8% | 59.4% | — | 中性、無助益 |
+| 結構：aggression 1.4→1.0 | 48.8% | 58.1% | 55.0% | 中性、無明確勝 |
+| 防守：openRefuge=40（無閘門） | 50.6% | **50.0%** | 53.1% | 破 trapper |
+| 防守：openRefuge=40（foe-far 閘門） | 48.1% | 53.8% | 56.3% | 破 trapper+鏡像 |
+| 你的點子：tempo-bomb（躲好就補彈） | **36.9%** | 54.4% | **40.6%** | 暴跌（自砍逃生分支） |
+| 對症：shrink-aware survivability | **52.5%** | 53.8% | 60.0% | 名目過 gate，但… |
+
+> **shrink-aware survivability**（把縮圈硬化時刻表 `HARDEN_TICK` 接進**敵人無關**的
+> `survivability` flood——修正先前 commit 7c29d81 把它錯接到只在近敵觸發的 `escapeBranches`／
+> entrap，碰不到 foe-far 的縮圈死亡而被還原）：名目第一次打贏 v4（52.5%），**但 `v5-diag` 確認
+> 死亡型態完全沒變（仍 27 SEALED）**——分支死前 10s 才崩、3s look-ahead 來不及；且 `bt-rank`
+> 全池淨退步（pirate pool Elo 1805→**1787**＝#2，trapper -5 蓋過 farmer +3）。classic 上同改動
+> ~中性（v4 53.8%/55.6 base、trapper 58.1、farmer 66.3）——因 classic 死於 TRAPPED 非縮圈。
+> **故還原。**
+
+### 未來對症方向
+- **pirate**：對稱擠壓只有**改 sim 縮圈機制**能破（例如讓最後存活格不對稱、或縮圈留下可爭奪的
+  非對稱優勢）——改 gameplay，需產品決策。bot 層已窮盡。
+- **classic（較有望）**：對症修法＝**走廊感知放彈閘門**——在單寬走廊放彈時，要求逃生路能撐過
+  「敵人補彈封死走廊另一端」（比現有 pessimistic 閘門更狠地預期 follow-up seal），直接打 trapper
+  天花板。`v5-trace` 已證實死法是「自己放彈堵一頭＋敵補彈封另一頭」。尚未實作。
