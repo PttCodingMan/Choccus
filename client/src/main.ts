@@ -352,8 +352,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const muteBtn = document.createElement('button');
   muteBtn.style.cssText =
     'position:fixed;top:8px;right:8px;z-index:900;padding:6px 12px;' +
-    'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
-    'font:13px system-ui,sans-serif;cursor:pointer;';
+    'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+    "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
   const updateMuteBtn = (): void => {
     muteBtn.textContent = sfx.muted ? '🔇 Muted' : '🔊 Sound On';
   };
@@ -369,8 +369,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const mapPicker = document.createElement('select');
   mapPicker.style.cssText =
     'position:fixed;top:8px;left:8px;z-index:900;padding:6px 12px;' +
-    'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
-    'font:13px system-ui,sans-serif;cursor:pointer;';
+    'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+    "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
   const mapOptions: ReadonlyArray<readonly [MapKind, string]> = [
     ['classic', 'Classic'],
     ['pirate', 'Pirate'],
@@ -393,8 +393,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const botPicker = document.createElement('select');
   botPicker.style.cssText =
     'position:fixed;top:44px;left:8px;z-index:900;padding:6px 12px;' +
-    'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
-    'font:13px system-ui,sans-serif;cursor:pointer;';
+    'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+    "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
   for (let n = 0; n <= 3; n++) {
     const opt = document.createElement('option');
     opt.value = String(n);
@@ -413,8 +413,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const formatPicker = document.createElement('select');
   formatPicker.style.cssText =
     'position:fixed;top:80px;left:8px;z-index:900;padding:6px 12px;' +
-    'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
-    'font:13px system-ui,sans-serif;cursor:pointer;';
+    'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+    "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
   const formatOptions: ReadonlyArray<readonly [TeamFormat, string]> = [
     ['ffa', 'Free For All'],
     ['2v2', '2v2 Team'],
@@ -449,8 +449,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const strengthPicker = document.createElement('select');
   strengthPicker.style.cssText =
     'position:fixed;top:116px;left:8px;z-index:900;padding:6px 12px;' +
-    'background:rgba(61,28,2,0.85);color:#f5e6d3;border:none;border-radius:8px;' +
-    'font:13px system-ui,sans-serif;cursor:pointer;';
+    'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+    "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
   const strengthOptions: ReadonlyArray<readonly [BotMode, string]> = [
     ['champion', "Champion (map's best)"],
     ['hard', 'Hard'],
@@ -481,8 +481,9 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const soundHint = document.createElement('div');
   soundHint.style.cssText =
     'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:900;' +
-    'padding:5px 14px;background:rgba(61,28,2,0.75);color:#f5e6d3;' +
-    'font:12px system-ui,sans-serif;border-radius:999px;pointer-events:none;';
+    "padding:6px 16px;background:rgba(255,255,255,.85);color:#A07C56;font-weight:700;" +
+    "font:700 12px 'Nunito',system-ui,sans-serif;border-radius:999px;" +
+    'box-shadow:0 3px 0 #EAD6B8;pointer-events:none;';
   soundHint.textContent = 'Click anywhere to enable sound';
   document.body.appendChild(soundHint);
 

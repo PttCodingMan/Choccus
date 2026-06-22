@@ -195,6 +195,8 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
   // Render-layer-only HUD bits (never touch the sim).
   const applyHud = (): void => {
     renderer.setSlotLabels(lineup.map((c) => c.label));
+    // Spectate is bot-vs-bot: every slot renders as a robot-chef.
+    renderer.setBotSlots(new Set(lineup.map((_, slot) => slot)));
     const a = lineup[0]?.label ?? '?';
     const b = lineup[1]?.label ?? '?';
     renderer.setHudHint(`Spectator — ${a} vs ${b}`, false);
