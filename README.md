@@ -1,63 +1,68 @@
-# Cocoa Clash (Choccus)
+# Cocoa Clash（Choccus）
 
-A chocolate-themed real-time online multiplayer game in the style of Bomberman.
-Place chocolate bombs, detonate them in a cross-shaped melt pattern, trap
-opponents in sugar-shell casings, and rescue teammates before time runs out.
+> 🌐 **語言 / Language**：**中文（本頁）** ｜ [English](./README.en.md)
 
-## Prerequisites
+巧克力主題的即時線上多人對戰遊戲，玩法類似「炸彈超人」。放下巧克力炸彈 →
+以十字熔流引爆 → 把對手凝固在糖殼裡困住 → 在時間耗盡前救援隊友。
 
-| Tool | Version |
+> 本檔為快速上手指南（安裝、執行、部署、測試、架構）。完整的遊戲設計文件
+> （主題決策、法律邊界、數值參數、AI 策略）請見 [`CLAUDE.md`](./CLAUDE.md)；
+> AI 版本的權威狀態與評估流程請見 [`docs/ai-versions.md`](./docs/ai-versions.md)。
+
+## 環境需求
+
+| 工具 | 版本 |
 |------|---------|
-| Node.js | 18 + (tested on 25) |
-| npm | 8 + (tested on 11) |
-| Python | 3.11 + |
+| Node.js | 18 以上（在 25 上測試過） |
+| npm | 8 以上（在 11 上測試過） |
+| Python | 3.11 以上 |
 
-## Install
+## 安裝
 
 ```sh
-# 1. JavaScript dependencies (client + tools)
+# 1. JavaScript 依賴（client + tools）
 npm install
 
-# 2. Python dependencies
+# 2. Python 依賴
 python3 -m venv server/.venv
 server/.venv/bin/pip install -r server/requirements.txt
 ```
 
 ---
 
-## Dev mode (Vite + relay, hot-reload)
+## 開發模式（Vite + relay，熱重載）
 
-Open **two** terminals:
+開**兩個**終端機：
 
 ```sh
-# Terminal 1 — WebSocket relay (default port 8765)
+# 終端機 1 — WebSocket relay（預設埠 8765）
 server/.venv/bin/python server/main.py
 
-# Terminal 2 — Vite dev server (port 5173)
+# 終端機 2 — Vite dev server（埠 5173）
 npm run dev
 ```
 
-Open two browser tabs at `http://localhost:5173/?mode=net` and play.
+開兩個瀏覽器分頁到 `http://localhost:5173/?mode=net` 即可對戰。
 
-### Solo / spectate (no relay needed)
+### 單人 / 觀戰（不需 relay）
 
-The client also runs fully offline against deterministic AI bots:
+前端也能完全離線跑，對手是決定性 AI bot：
 
-| URL | Mode |
+| 網址 | 模式 |
 |-----|------|
-| `http://localhost:5173/` | online lobby (default) |
-| `http://localhost:5173/?mode=solo` | one human vs N AI bots (`&bots=`, `&difficulty=`, `&strategy=`) |
-| `http://localhost:5173/?mode=spectate` | watch AI bots fight each other |
+| `http://localhost:5173/` | 線上大廳（預設） |
+| `http://localhost:5173/?mode=solo` | 一名玩家 vs N 個 AI bot（`&bots=`、`&difficulty=`、`&strategy=`） |
+| `http://localhost:5173/?mode=spectate` | 看 AI bot 互相對打 |
 
-### Quick zero-click autoready (automated / CI)
+### 零點擊自動就緒（自動化 / CI）
 
 ```
 http://localhost:5173/?mode=net&room=test&autoready=1
 ```
 
-Open two tabs with that URL; they join the same room and start automatically.
+用兩個分頁開上面這個網址，會自動加入同房並開始。
 
-Use `&port=<n>` to connect to a relay on a different port:
+用 `&port=<n>` 連到不同埠的 relay：
 
 ```
 http://localhost:5173/?mode=net&room=test&autoready=1&port=9000
@@ -65,147 +70,146 @@ http://localhost:5173/?mode=net&room=test&autoready=1&port=9000
 
 ---
 
-## Production / deploy mode
+## 正式 / 部署模式
 
-### 1. Build the client
+### 1. 建置前端
 
 ```sh
 npm run build
-# → client/dist/  (static files ready to serve)
+# → client/dist/  （可直接 serve 的靜態檔案）
 ```
 
-### 2. Start the production server
+### 2. 啟動正式伺服器
 
 ```sh
 bash scripts/serve.sh
-# or via npm:
+# 或透過 npm：
 npm run serve
 ```
 
-This starts two services:
+這會啟動兩個服務：
 
-| Service | Default port | Configurable via |
+| 服務 | 預設埠 | 可設定方式 |
 |---------|-------------|-----------------|
-| HTTP (static client) | **8080** | `CHOCCUS_STATIC_PORT` env or `--static-port` |
-| WebSocket relay | **8765** | `CHOCCUS_PORT` env or `--port` |
+| HTTP（靜態前端） | **8080** | `CHOCCUS_STATIC_PORT` 環境變數或 `--static-port` |
+| WebSocket relay | **8765** | `CHOCCUS_PORT` 環境變數或 `--port` |
 
-Open `http://<server-ip>:8080/` in two browser tabs, click **Quick Match** (or
-enter the same room name in both tabs), and the online match starts.
+在兩個瀏覽器分頁開 `http://<server-ip>:8080/`，點 **Quick Match**（或在兩個
+分頁輸入同樣的房名），線上對戰就會開始。
 
-### Container (Docker / Podman)
+### 容器（Docker / Podman）
 
-The `Dockerfile` is multi-stage: Node builds `client/dist`, then a Python
-runtime runs `serve.py` (static `:8080` + WS relay `:8765` in one process).
+`Dockerfile` 是多階段建置：Node 先建 `client/dist`，再由 Python runtime
+跑 `serve.py`（靜態 `:8080` ＋ WS relay `:8765`，同一個行程）。
 
 ```sh
-podman build -t choccus .          # or: docker build -t choccus .
+podman build -t choccus .          # 或：docker build -t choccus .
 podman run -d -p 8080:8080 -p 8765:8765 choccus
 ```
 
-Pushing to `main` builds and publishes the image to GitHub Container Registry
-via `.github/workflows/build-image.yml`:
+推到 `main` 會經由 `.github/workflows/build-image.yml` 建置並發佈 image 到
+GitHub Container Registry：
 
 ```sh
 podman pull ghcr.io/codingman/choccus:latest
 ```
 
-(The package starts private — pull with a PAT, or set it public once in the
-repo's **Packages** settings.)
+（套件初始為 private — 用 PAT 拉取，或在 repo 的 **Packages** 設定裡設為 public。）
 
-### How the WS URL is resolved (client)
+### 前端如何解析 WS URL
 
-The client resolves the relay URL automatically — no hardcoded `localhost`:
+前端會自動解析 relay 的 URL — 不寫死 `localhost`：
 
-| URL parameter | Effect |
+| URL 參數 | 效果 |
 |---|---|
-| `?ws=wss://example.com:8765` | explicit full URL override |
-| `?port=9000` | `ws[s]://<same hostname>:9000` |
-| _(none)_ | `ws[s]://<same hostname>:8765` (default) |
+| `?ws=wss://example.com:8765` | 明確指定完整 URL，覆蓋預設 |
+| `?port=9000` | `ws[s]://<同一 hostname>:9000` |
+| _(無)_ | `ws[s]://<同一 hostname>:8765`（預設） |
 
-Uses `wss://` automatically when the page is served over HTTPS.
+當頁面以 HTTPS 提供時，會自動使用 `wss://`。
 
-### Forcing a client rebuild before serving
+### serve 前強制重新建置前端
 
 ```sh
 bash scripts/serve.sh --rebuild
-# or:
+# 或：
 npm run serve:rebuild
 ```
 
-### Split host/port setup (relay on a different host or behind a proxy)
+### 分離 host/port 設定（relay 在不同主機或在反向代理後）
 
-Pass the full WS URL explicitly:
+明確傳入完整的 WS URL：
 
 ```
 http://<static-host>:8080/?ws=wss://relay.example.com:8765
 ```
 
-The invite link generated in-game preserves the `?ws=` parameter so friends
-can click it directly.
+遊戲內產生的邀請連結會保留 `?ws=` 參數，朋友可直接點擊。
 
-### Reverse proxy (nginx / caddy)
+### 反向代理（nginx / caddy）
 
-If you put a TLS-terminating reverse proxy in front, configure it to:
-- Serve `client/dist/` at `/` over HTTPS
-- Proxy WebSocket connections at `/ws` (or a separate subdomain/port) to `ws://localhost:8765`
+如果在前面放一個做 TLS termination 的反向代理，設定它：
+- 在 `/` 以 HTTPS 提供 `client/dist/`
+- 把 `/ws`（或另一個子網域／埠）的 WebSocket 連線代理到 `ws://localhost:8765`
 
-Then open the site over `https://` — the client automatically upgrades to `wss://`.
+接著用 `https://` 開站 — 前端會自動升級成 `wss://`。
 
 ---
 
-## Running tests
+## 執行測試
 
 ```sh
-# Determinism / simulation / AI tests  (vitest: tsc --noEmit + golden hashes)
+# 決定性 / 模擬 / AI 測試（vitest：tsc --noEmit + golden hash）
 npm test
 
-# Python relay server tests  (pytest)
+# Python relay 伺服器測試（pytest）
 server/.venv/bin/python -m pytest server/tests -q
 ```
 
-### AI benchmarks (after changing bot logic)
+### AI 基準測試（改完 bot 邏輯後執行）
 
 ```sh
 cd tools/sim-runner
-npm run matrix-bench     # 1v1 win-rate matrix → per-map rank-1 champion
-npm run version-bench    # live bot vs frozen previous version (ΔWinRate / ΔAvgRank)
+npm run v3-bench         # v3 對 v2 的 1v1 勝率＋80% 門檻（權威評估）
+npm run bt-rank -- --target=v5:zoner --map=classic   # 把新策略放上 Bradley-Terry 量尺
+npm run v5-probe -- --target=v5:zoner                 # 對前沿封鎖者的快速 A/B 探針
 ```
 
-See `docs/ai-versions.md` for the authoritative AI version status, strengths, and eval flow.
+權威的 AI 版本狀態、強度與評估流程見 [`docs/ai-versions.md`](./docs/ai-versions.md)。
 
 ---
 
-## Architecture overview
+## 架構總覽
 
-Monorepo: npm workspaces (`client` + `tools/sim-runner`) + a standalone Python relay.
+Monorepo：npm workspaces（`client` + `tools/sim-runner`）＋一個獨立的 Python relay。
 
 ```
-shared/                  — code shared client⇄server: constants.ts, types.ts,
-                           protocol.ts (1-byte MsgType + MessagePack wire format)
+shared/                  — 前後端共用：constants.ts、types.ts、
+                           protocol.ts（1-byte MsgType + MessagePack wire 格式）
 
 client/src/
-  main.ts                — entry; URL ?mode= picks lobby (default) / solo / spectate
-  sim/                   — deterministic, integer-only simulation core
-                           (no Pixi/net/wall-clock; ESLint-guarded — keep it deterministic)
-  net/                   — lockstep netcode: wsUrl, netMode, NetClient, NetLobby,
-                           LockstepEngine (per-tick input sync), MatchRunner
-  ai/                    — deterministic bots: v1/ + v2/ (frozen) + v3/ (live) snapshots,
-                           common/ (sim-aligned perception), mapChampions.ts
-  render/                — Pixi.js v8 renderers + interpolation (renders between two sim states)
-  input/ ui/ config/ audio/ — keyboard, FeelPanel, FeelParams, sound
-  spectate/              — bot-vs-bot spectator mode
+  main.ts                — 入口；URL ?mode= 選 大廳（預設）/ solo / spectate
+  sim/                   — 決定性、純整數的模擬核心
+                           （no Pixi/net/wall-clock；ESLint 護欄 — 保持決定性）
+  net/                   — lockstep 連線碼：wsUrl、netMode、NetClient、NetLobby、
+                           LockstepEngine（逐 tick 輸入同步）、MatchRunner
+  ai/                    — 決定性 bot：v1/…v5/ 版本快照、
+                           common/（與 sim 對齊的感知層）、mapChampions.ts
+  render/                — Pixi.js v8 渲染器 + 內插（在兩個 sim state 間內插）
+  input/ ui/ config/ audio/ — 鍵盤、FeelPanel、FeelParams、音效
+  spectate/              — bot vs bot 觀戰模式
 
 server/
-  main.py                — dev relay entry point  (ws only, default 8765)
-  serve.py               — production entry point (HTTP static + ws relay)
-  relay/                 — RelayServer, TickCoordinator, Lobby, Room (relays input only, never runs the sim)
-  tests/                 — pytest suite
+  main.py                — dev relay 入口（純 ws，預設 8765）
+  serve.py               — 正式入口（HTTP static + ws relay）
+  relay/                 — RelayServer、TickCoordinator、Lobby、Room（只中繼輸入，絕不跑 sim）
+  tests/                 — pytest 測試
 
-tools/sim-runner/        — headless determinism tests + AI bench (matrix-bench, version-bench, replay/golden)
-scripts/serve.sh         — build + serve convenience script
-docs/ai-versions.md      — authoritative AI version status / strength / eval flow
+tools/sim-runner/        — headless 決定性測試 + AI bench（v3-bench、bt-rank、replay/golden）
+scripts/serve.sh         — build + serve 便利腳本
+docs/ai-versions.md      — 權威的 AI 版本狀態 / 強度 / 評估流程
 ```
 
-> The deterministic core (`client/src/sim/`) is the contract that makes lockstep
-> netcode and bot backfill possible: same seed + same per-tick inputs ⇒
-> byte-identical state on every client. See `CLAUDE.md` for the full design doc.
+> 決定性核心（`client/src/sim/`）是讓 lockstep 連線與 bot 補位成為可能的契約：
+> 同 seed + 同逐 tick 輸入 ⇒ 每個 client 上 byte-identical 的 state。
+> 完整設計文件見 [`CLAUDE.md`](./CLAUDE.md)。
