@@ -77,12 +77,12 @@
     {
       "a": "v3:farmer",
       "b": "v5:zoner",
-      "winsA": 35.5,
-      "winsB": 44.5,
-      "draws": 15,
-      "games": 80,
+      "winsA": 51.5,
+      "winsB": 68.5,
+      "draws": 27,
+      "games": 120,
       "meta": {
-        "repeats": 40,
+        "repeats": 60,
         "seedBase": 305419896
       }
     },
@@ -149,12 +149,12 @@
     {
       "a": "v3:hunter",
       "b": "v5:zoner",
-      "winsA": 6,
-      "winsB": 74,
+      "winsA": 7,
+      "winsB": 113,
       "draws": 2,
-      "games": 80,
+      "games": 120,
       "meta": {
-        "repeats": 40,
+        "repeats": 60,
         "seedBase": 305419896
       }
     },
@@ -209,12 +209,12 @@
     {
       "a": "v3:reactive",
       "b": "v5:zoner",
-      "winsA": 1,
-      "winsB": 79,
+      "winsA": 2,
+      "winsB": 118,
       "draws": 0,
-      "games": 80,
+      "games": 120,
       "meta": {
-        "repeats": 40,
+        "repeats": 60,
         "seedBase": 305419896
       }
     },
@@ -257,12 +257,12 @@
     {
       "a": "v3:runner",
       "b": "v5:zoner",
-      "winsA": 17,
-      "winsB": 63,
-      "draws": 2,
-      "games": 80,
+      "winsA": 27.5,
+      "winsB": 92.5,
+      "draws": 1,
+      "games": 120,
       "meta": {
-        "repeats": 40,
+        "repeats": 60,
         "seedBase": 305419896
       }
     },
@@ -293,12 +293,12 @@
     {
       "a": "v3:trapper",
       "b": "v5:zoner",
-      "winsA": 30,
-      "winsB": 50,
-      "draws": 14,
-      "games": 80,
+      "winsA": 47,
+      "winsB": 73,
+      "draws": 16,
+      "games": 120,
       "meta": {
-        "repeats": 40,
+        "repeats": 60,
         "seedBase": 305419896
       }
     },
@@ -317,12 +317,12 @@
     {
       "a": "v3:zoner",
       "b": "v5:zoner",
-      "winsA": 31.5,
-      "winsB": 48.5,
-      "draws": 5,
-      "games": 80,
+      "winsA": 43.5,
+      "winsB": 76.5,
+      "draws": 7,
+      "games": 120,
       "meta": {
-        "repeats": 40,
+        "repeats": 60,
         "seedBase": 305419896
       }
     }

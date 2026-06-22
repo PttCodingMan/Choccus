@@ -1,7 +1,7 @@
 # AI 版本狀態（Choccus Bot）
 
 > 最後更新：2026-06-21（**v5 上線＝v4 Zoner 主幹 ＋ 全新正交「防守軸：逃生路線冗餘」**。詳見 §九。
-> 重點：①v4 的天花板（v3:trapper 封鎖鏡像）與玩家實測死法是同一件事——**躲死胡同／站位不安全→被補一顆封殺彈打死**；先前「只有進攻槓桿、全被 trapper 讓掉」的結論只試過進攻面，**防守面（逃生冗餘）正交未試**。②v5 兩機制：**反封殺位置罰分 `entrapWeight`**（罰逃生分支<2 的死胡同格、按敵接近度加權）＋**穩健逃生點 `robustRefuge`**（放彈後逃向分支最多的格；classic 開、pirate 關）。③結果：**BT 量尺兩圖 #1（v4 退第二）**、直接對 v4 兩圖 ≥ 勝（classic 55.6%）、對 v3:trapper ~54%→~59%。④新工具 **`v5-diag`**（失敗軌跡診斷：死亡分類＋死前 10 秒軌跡）。
+> 重點：①v4 的天花板（v3:trapper 封鎖鏡像）與玩家實測死法是同一件事——**躲死胡同／站位不安全→被補一顆封殺彈打死**；先前「只有進攻槓桿、全被 trapper 讓掉」的結論只試過進攻面，**防守面（逃生冗餘）正交未試**。②v5 兩機制：**反封殺位置罰分 `entrapWeight`**（罰逃生分支<2 的死胡同格、按敵接近度加權）＋**穩健逃生點 `robustRefuge`**（放彈後逃向分支最多的格；classic 開、pirate 關）。③結果：**BT 量尺兩圖 #1（v4 退第二，classic +61 / pirate +18，皆 ≥1 SD）**、直接對 v4 兩圖 ≥ 勝（classic 55.6%、pirate 50%）、對 v3:trapper ~54%→**61–63%**（天花板突破）。④新工具 **`v5-diag`**（失敗軌跡診斷：死亡分類＋死前 10 秒軌跡）。
 > 最後更新前一版：2026-06-21（**v4 上線並兩圖各自調參完成 + 遊戲重平衡 caps**。詳見 §八。
 > 重點：①遊戲 caps 提高（火力上限 6→**7**、彈數上限 5→**6**），golden 全綠、**兩圖 BT 量尺已用新 caps 重 seed**；②v4 主幹＝**控場流/Zoner**，評估改以 **Bradley-Terry 量尺**為準；③新增三個機制（**長射程發育 fire-7**、**sudden-death 縮圈生存走位 shrinkSurvival**、**角落封殺 cornerFinish**）；④結果 **classic #1 +42、pirate #1 +48**（皆對第二名）；⑤天花板＝**trapper 是 v4 同流派的「封鎖鏡像」**，所有「更兇/更發育/更早交戰」槓桿都會把 trapper 讓掉，故領先卡在這。⑥工具：`bt-rank`/`bt-seed` 新增 `--map` 過濾，單圖評估快 ~5×。⑦新增 **`v5-probe`** 新策略快速 A/B 探針（vs 前沿封鎖者 `v4:zoner`＋`v3:trapper` 直接 CRN、不寫 history、印 SHIP-GATE）；移除 4 個 v2 期過時 throwaway 評估腳本（`probe-classic`/`probe-map`/`sweep-classic`/`v3-sweep`，詳見 §七末）。）
 > 最後更新前一版：2026-06-20（**新增 sudden-death 縮圈機制**（`sim/SuddenDeath.ts`）——120 秒起由外往內螺旋收硬磚、踩到即淘汰，~179 秒收滿全場，徹底消滅 farm-to-timeout。超時率兩圖 89%→**0%**，限時擊殺率 classic 10.8%→**69.2%** / pirate 2.5%→**81.7%**，KILL-EDGE 兩圖仍 PASS。）
@@ -292,20 +292,22 @@ v5 **不在進攻面動刀**，而是開一條 v4 天花板分析從未試過的
    （pirate BT 1809→1766），而把它 tempo-bound 又會讓鏡像優勢崩掉（45%）——開放圖的鏡像
    優勢與農田 tempo **耦合**，故 pirate 關掉、純靠 entrap 項拿下量尺。
 
-### 結果（權威：`bt-rank --repeats=40`，committed 量尺 `bt-history/`）
+### 結果（權威：`bt-rank --repeats=60`，committed 量尺 `bt-history/`）
 | 地圖 | v5:zoner Elo | 名次 | #2 | 領先 | v5 逐對手勝率（hunter/farmer/zoner/runner/trapper/reactive） |
 | --- | --- | --- | --- | --- | --- |
-| **classic** | **1783** | **#1** | v4:zoner 1721 | **+62** | 96 / 66 / 63 / 91 / 59 / 97 |
-| **pirate** | **1809** | **#1** | v4:zoner 1787 | **+22** | 93 / 59 / 64 / 79 / 59 / 99 |
+| **classic** | **1783** | **#1** | v4:zoner 1722 | **+61**（約 4 SD） | 97 / 63 / 62 / 90 / 63 / 98 |
+| **pirate** | **1805** | **#1** | v4:zoner 1787 | **+18**（約 1.4 SD） | 94 / 57 / 64 / 77 / 61 / 98 |
 
 直接對打（`v5-probe --repeats=40`，CRN、draws=0.5）：**classic 對 v4:zoner 55.6%、pirate 50.0%**；
 對 v3:trapper **classic 58.8%、pirate 57.5%**（v4 約 54–59%，trapper 對位明顯改善）。
-**結論：v5 兩圖 BT #1、v4 退第二（+62 / +22，皆 ≥1 個標準差）；trapper 天花板被防守軸正交突破。**
+**結論：v5 兩圖 BT #1、v4 退第二（classic +61、pirate +18，皆 ≥1 個標準差）；trapper 天花板被防守軸正交突破。**
 
 ### 天花板再框定後仍在的對位
-逐對手殘差顯示 v5 對 **v3:trapper 仍是相對最弱對位**（觀測 59% vs BT 預測 64–65%，Δ −5/−6）
-——RPS 非遞移的特性（trapper 是封鎖環的剋星方向）。但**絕對值已是勝場**（59%），且防守軸
-讓「更發育/更兇」這類先前被 trapper 鎖死的進攻槓桿重新有額度可花（未來 v6 方向）。
+v5 對 **v3:trapper 仍是 RPS 環上相對偏弱的方向**（trapper 是封鎖環的剋星），但防守軸把它
+從 ~54% 拉到 **classic 63% / pirate 61%**（觀測已貼齊 BT 預測、殘差 ≈0），不再是綁住領先的
+對位。**pirate 鏡像是真正的 50% 對稱牆**（cannon4、shrink-aware、late-robust 三種槓桿實測
+皆無法撼動鏡像、或反而掉量尺），故 pirate 領先靠贏整池、不靠贏鏡像；防守軸也讓「更發育/
+更兇」這類先前被 trapper 鎖死的進攻槓桿重新有額度可花（未來 v6 方向）。
 
 ### 改完 v5 的回歸檢查
 `npm run lint`（含 `sim/**` 決定性護欄）＋ `npm test`（決定性／禁用 token／行為護欄，v5 全綠）＋
