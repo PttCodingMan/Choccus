@@ -1,4 +1,4 @@
-"""Cocoa Clash production server.
+"""Choccus production server.
 
 Runs two services side-by-side:
   - WebSocket relay  (CHOCCUS_PORT, default 8765)
@@ -109,7 +109,7 @@ async def _run_relay(host: str, port: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Cocoa Clash production server (static HTTP + WS relay)",
+        description="Choccus production server (static HTTP + WS relay)",
     )
     parser.add_argument(
         "--port",

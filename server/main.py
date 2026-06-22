@@ -1,4 +1,4 @@
-"""Cocoa Clash relay server entry point.
+"""Choccus relay server entry point.
 
 Pure deterministic-lockstep relay: rooms/lobby, shared match seed, per-tick
 input relaying (see server/relay/). The server never runs game logic.

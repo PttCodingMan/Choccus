@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# Cocoa Clash（Choccus）
+# 奶油啵啵爆（Choccus）
 
-巧克力主題的「炸彈超人」類即時對戰遊戲。放置炸彈 → 十字範圍爆炸 → 困住 / 救援。
+巧克力與蛋糕奶油主題的格子即時對戰遊戲。放置蛋糕 → 十字範圍爆炸 → 黏住困住 / 救援。
 
 > 下方「開發指令」與「程式架構」兩節是給 Claude Code 的工程速查；其後的一～四節是
 > **遊戲設計文件**（主題決策、法律邊界、數值參數、AI 策略），改動玩法前先讀。

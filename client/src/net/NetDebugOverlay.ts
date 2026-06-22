@@ -48,7 +48,7 @@ export class NetDebugOverlay {
     ].join(';');
 
     const title = document.createElement('div');
-    title.textContent = 'Cocoa Clash — net status';
+    title.textContent = '奶油啵啵爆 — net status';
     title.style.cssText = 'font-weight:bold;color:#ffb74d;';
     this.root.appendChild(title);
 

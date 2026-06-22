@@ -2,7 +2,7 @@
   "name": "choccus",
   "private": true,
   "version": "0.0.1",
-  "description": "Cocoa Clash - chocolate-themed bomber-style online multiplayer game",
+  "description": "奶油啵啵爆 (Choccus) - chocolate-and-cake themed grid online multiplayer game",
   "type": "module",
   "workspaces": [
     "client",
