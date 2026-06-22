@@ -99,6 +99,10 @@ export function createInitialState(
     pvp?: boolean; // 預設 false（vestigial：行為一律 PvP，見 SimParams.pvp）
     teams?: readonly number[]; // 預設 teams[i] = i（隊伍即 slot）
     map?: MapKind; // 預設 'classic'（地圖布局種類，整場固定，非隨機）
+    // 出生角排列：slot i 生在 SPAWN_CORNERS[spawnOrder[i]]，預設恆等（corner i）。
+    // 由呼叫端在 sim 外算好（純函式 spawnOrderFromSeed），sim 本身仍不抽出生亂數。
+    // bench/golden 不帶此參數 → 與舊行為 byte-identical（不影響 BT 量尺）。
+    spawnOrder?: readonly number[];
   },
 ): SimState {
   // pvp is vestigial — kept on SimParams but never branches anything; the win
@@ -120,7 +124,9 @@ export function createInitialState(
   const n = Math.max(1, Math.min(numPlayers, SPAWN_CORNERS.length));
   const players: PlayerState[] = [];
   for (let i = 0; i < n; i++) {
-    const corner = SPAWN_CORNERS[i];
+    // Default identity (corner i); a caller-supplied spawnOrder permutes which
+    // pre-cleared corner this slot occupies. No PRNG drawn here either way.
+    const corner = SPAWN_CORNERS[opts?.spawnOrder?.[i] ?? i];
     // team is a whole-match constant; NOT hashed (see PlayerState in Player.ts).
     // Default team = slot (each player on its own team unless opts.teams given).
     if (corner !== undefined) {

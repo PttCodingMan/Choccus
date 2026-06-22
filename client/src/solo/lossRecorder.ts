@@ -35,6 +35,8 @@ export interface LossReplay {
   map: MapKind;
   numPlayers: number;
   teams: number[];
+  /** Spawn-corner index per slot (slot i spawns at SPAWN_CORNERS[spawnOrder[i]]). */
+  spawnOrder: number[];
   ticks: number;
   inputs: ReplayInputEvent[];
   /** Who died, when, and how — 'crush' = sudden-death wall, 'kill' = bomb/enemy. */
@@ -49,16 +51,24 @@ export class LossRecorder {
   private map: MapKind = 'classic';
   private numPlayers = 0;
   private teams: number[] = [];
+  private spawnOrder: number[] = [];
   private events: ReplayInputEvent[] = [];
   private prev: InputFrame[] = [];
   private deaths: LossReplay['deaths'] = [];
 
   /** Begin recording a fresh match. */
-  start(seed: number, map: MapKind, numPlayers: number, teams: number[]): void {
+  start(
+    seed: number,
+    map: MapKind,
+    numPlayers: number,
+    teams: number[],
+    spawnOrder: number[],
+  ): void {
     this.seed = seed >>> 0;
     this.map = map;
     this.numPlayers = numPlayers;
     this.teams = teams.slice();
+    this.spawnOrder = spawnOrder.slice();
     this.events = [];
     this.prev = [];
     this.deaths = [];
@@ -117,6 +127,7 @@ export class LossRecorder {
       map: this.map,
       numPlayers: this.numPlayers,
       teams: this.teams,
+      spawnOrder: this.spawnOrder,
       ticks: finalState.tick,
       inputs: this.events,
       deaths: this.deaths,

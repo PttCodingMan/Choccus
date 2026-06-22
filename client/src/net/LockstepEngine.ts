@@ -41,6 +41,7 @@ import {
 } from '../../../shared/constants';
 import { type FeelParams, makeFeelParams } from '../config/FeelParams';
 import { type InputFrame, NO_INPUT } from '../sim/InputBuffer';
+import { spawnOrderFromSeed } from '../sim/Map';
 import { type SimState, createInitialState, tick } from '../sim/Sim';
 import type { NetClient } from './NetClient';
 import type {
@@ -129,9 +130,12 @@ export class LockstepEngine {
       inputBufferMs: wire.inputBufferMs,
     });
     // team = slot (teams omitted → default). Computed identically on every
-    // client from the shared seed + roster width, so it never diverges.
+    // client from the shared seed + roster width, so it never diverges. The
+    // spawn-corner permutation is likewise derived purely from the shared seed,
+    // so every client agrees on it with no extra wire data (no desync).
     this.curState = createInitialState(opts.start.seed, feel, this.numPlayers, {
       pvp: true,
+      spawnOrder: spawnOrderFromSeed(opts.start.seed),
     });
     this.prevState = this.curState;
     this.currentTick = opts.start.t0;

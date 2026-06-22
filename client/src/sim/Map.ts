@@ -26,7 +26,7 @@ import {
   SOFT_BRICK_RATE,
 } from '../../../shared/constants';
 import { TileKind } from '../../../shared/types';
-import { prngFloat } from './Prng';
+import { prngFloat, prngInt } from './Prng';
 
 export type TileGrid = Uint8Array;
 
@@ -94,6 +94,33 @@ export const SPAWN_CORNERS: ReadonlyArray<readonly [number, number]> = [
   [1, MAP_ROWS - 2],
   [MAP_COLS - 2, MAP_ROWS - 2],
 ];
+
+/**
+ * A deterministic permutation of the four spawn-corner indices `[0,1,2,3]`,
+ * derived purely from `seed` (Fisher-Yates over a Mulberry32 stream). Pure and
+ * decision-free — same seed always yields the same order on every client, so it
+ * can be re-derived from the shared match seed in net play with no extra wire
+ * data. Pass the result as `createInitialState`'s `spawnOrder` so slot i spawns
+ * at corner `order[i]` instead of corner i.
+ *
+ * Note: ALL four corner L-zones are always force-cleared at generation time and
+ * consume no PRNG (see `isSpawnClear`), so permuting which slot lands on which
+ * corner never perturbs map generation. The default (no `spawnOrder`) keeps the
+ * identity mapping, so the headless bench/golden path stays byte-identical.
+ */
+export function spawnOrderFromSeed(seed: number): number[] {
+  const order = [0, 1, 2, 3];
+  // Decorrelate from the map-generation stream (which consumes `seed` directly).
+  let s = (seed ^ 0x5bd1e995) >>> 0;
+  for (let i = order.length - 1; i > 0; i--) {
+    let j: number;
+    [j, s] = prngInt(s, 0, i);
+    const tmp = order[i]!;
+    order[i] = order[j]!;
+    order[j] = tmp;
+  }
+  return order;
+}
 
 /** True on the hard outer ring (structural boundary, both map kinds). */
 function isOuterRing(x: number, y: number): boolean {
