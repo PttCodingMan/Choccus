@@ -190,7 +190,7 @@ export class LobbyUI {
       this.root,
     );
 
-    // Big "Cocoa Clash" title with chocolate gradient.
+    // Big game-title with chocolate gradient.
     const titleEl = el(
       'div',
       [
@@ -206,7 +206,7 @@ export class LobbyUI {
       ].join(';'),
       this.landing,
     );
-    titleEl.textContent = 'Cocoa Clash';
+    titleEl.textContent = '奶油啵啵爆';
 
     // Tagline.
     const taglineEl = el(

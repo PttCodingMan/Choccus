@@ -1,5 +1,5 @@
 /**
- * Cocoa Clash — shared enums / const-objects.
+ * Choccus — shared enums / const-objects.
  *
  * Plain `as const` objects (not TS `enum`) so values stay simple integers that
  * serialize 1:1 over MessagePack and are trivial to mirror in Python.
