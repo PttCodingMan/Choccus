@@ -151,6 +151,8 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
 
     if (renderer === null) {
       renderer = await Renderer.create();
+      // Online play is human-vs-human: nobody renders as a robot-chef.
+      renderer.setBotSlots(new Set());
       mount?.appendChild(renderer.canvas);
     }
     renderer.setHudHint(
