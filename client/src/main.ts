@@ -39,7 +39,7 @@ import { sampleLocalInput } from './input/InputMapper';
 import { runNetMode } from './net/netMode';
 import { Renderer } from './render/Renderer';
 import { type InputFrame, NO_INPUT } from './sim/InputBuffer';
-import type { MapKind } from './sim/Map';
+import { type MapKind, spawnOrderFromSeed } from './sim/Map';
 import { type SimState, createInitialState, tick } from './sim/Sim';
 import { LossRecorder } from './solo/lossRecorder';
 import { runSpectate } from './spectate/spectateMode';
@@ -243,6 +243,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     pvp: true,
     map: mapKind,
     teams: teamsForFormat(),
+    spawnOrder: spawnOrderFromSeed(seed),
   });
   let prev: SimState = cur;
 
@@ -267,7 +268,13 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   // Records each solo match as a replay fixture; persists it on an AI loss so we
   // can re-run the loss headless (`npm run replay`) and diagnose it.
   const lossRecorder = new LossRecorder();
-  lossRecorder.start(seed, mapKind, 1 + effectiveBots(), explicitTeams());
+  lossRecorder.start(
+    seed,
+    mapKind,
+    1 + effectiveBots(),
+    explicitTeams(),
+    spawnOrderFromSeed(seed).slice(0, 1 + effectiveBots()),
+  );
 
   const keyboard = new KeyboardInput();
   keyboard.attach(window);
@@ -310,9 +317,16 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       pvp: true,
       map: mapKind,
       teams: teamsForFormat(),
+      spawnOrder: spawnOrderFromSeed(seed),
     });
     prev = cur;
-    lossRecorder.start(seed, mapKind, 1 + effectiveBots(), explicitTeams());
+    lossRecorder.start(
+      seed,
+      mapKind,
+      1 + effectiveBots(),
+      explicitTeams(),
+      spawnOrderFromSeed(seed).slice(0, 1 + effectiveBots()),
+    );
     // Render-layer only: refresh HUD labels/hint so a changed bot count shows.
     renderer.setSlotLabels(buildSlotLabels());
     renderer.setHudHint(buildHint(), true);

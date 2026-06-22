@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { ActionFlags, Direction } from '../../../shared/types';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
 import { type InputFrame, NO_INPUT } from '../../../client/src/sim/InputBuffer';
-import type { MapKind } from '../../../client/src/sim/Map';
+import { type MapKind, spawnOrderFromSeed } from '../../../client/src/sim/Map';
 import { type SimState, createInitialState, tick } from '../../../client/src/sim/Sim';
 import { LossRecorder } from '../../../client/src/solo/lossRecorder';
 import { expandInputs, runReplay } from '../src/replay';
@@ -26,9 +26,16 @@ function scriptInput(t: number, slot: number): InputFrame {
 function recordLiveMatch(map: MapKind, seed: number, ticks: number) {
   const n = 2;
   const teams = [0, 1];
-  let state: SimState = createInitialState(seed, makeFeelParams(), n, { map, teams });
+  // Exercise a shuffled spawn order so the recorder→replay round-trip proves the
+  // permutation is captured and reproduced (not just identity spawns).
+  const spawnOrder = spawnOrderFromSeed(seed).slice(0, n);
+  let state: SimState = createInitialState(seed, makeFeelParams(), n, {
+    map,
+    teams,
+    spawnOrder,
+  });
   const rec = new LossRecorder();
-  rec.start(seed, map, n, teams);
+  rec.start(seed, map, n, teams, spawnOrder);
   const fedFrames: InputFrame[][] = [];
   for (let t = 0; t < ticks; t++) {
     const inputs = [scriptInput(state.tick, 0), scriptInput(state.tick, 1)];
@@ -58,7 +65,7 @@ describe('LossRecorder', () => {
 
   it('flags an AI loss only when the human (slot 0) side wins', () => {
     const rec = new LossRecorder();
-    rec.start(1, 'classic', 2, [0, 1]);
+    rec.start(1, 'classic', 2, [0, 1], [0, 1]);
     // Hand-built terminal states: slot 0 alive, slot 1 dead ⇒ human won ⇒ AI lost.
     const base = createInitialState(1, makeFeelParams(), 2, { map: 'classic', teams: [0, 1] });
     const humanWon: SimState = {

@@ -28,7 +28,7 @@ import { AI_VERSIONS, type BotSpec, type IBotController, LATEST_AI_VERSION } fro
 import { makeFeelParams } from '../config/FeelParams';
 import { Renderer } from '../render/Renderer';
 import { type InputFrame } from '../sim/InputBuffer';
-import type { MapKind } from '../sim/Map';
+import { type MapKind, spawnOrderFromSeed } from '../sim/Map';
 import { resolveOutcome } from '../sim/Outcome';
 import { type SimState, createInitialState, tick } from '../sim/Sim';
 
@@ -176,6 +176,7 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
     return createInitialState(seed, feel, lineup.length, {
       pvp: true,
       map: mapKind,
+      spawnOrder: spawnOrderFromSeed(seed),
     });
   }
 

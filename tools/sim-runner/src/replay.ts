@@ -64,6 +64,12 @@ export interface Replay {
   teams?: number[];
   /** Map layout (optional). Default: 'classic'. */
   map?: MapKind;
+  /**
+   * Spawn-corner index per slot (optional). Slot i spawns at the i-th corner by
+   * default; supplying a permutation here reproduces a shuffled-spawn match
+   * (solo/net). Omit it (as the golden/bench fixtures do) for identity spawns.
+   */
+  spawnOrder?: number[];
   ticks: number;
   inputs: ReplayInputEvent[];
 }
@@ -100,6 +106,19 @@ export function validateReplay(replay: Replay): void {
   }
   if (replay.map !== undefined && replay.map !== 'classic' && replay.map !== 'pirate') {
     throw new Error("replay.map must be 'classic' or 'pirate'");
+  }
+  if (replay.spawnOrder !== undefined) {
+    const so = replay.spawnOrder;
+    const valid =
+      Array.isArray(so) &&
+      so.length === replay.numPlayers &&
+      so.every((c) => Number.isInteger(c) && c >= 0 && c < 4) &&
+      new Set(so).size === so.length;
+    if (!valid) {
+      throw new Error(
+        'replay.spawnOrder must be numPlayers distinct corner indices in 0..3',
+      );
+    }
   }
   if (!Number.isInteger(replay.ticks) || replay.ticks < 1) {
     throw new Error('replay.ticks must be a positive integer');
@@ -158,6 +177,7 @@ export function runReplay(
   let state = createInitialState(replay.seed >>> 0, feel, replay.numPlayers, {
     ...(replay.teams !== undefined ? { teams: replay.teams } : {}),
     ...(replay.map !== undefined ? { map: replay.map } : {}),
+    ...(replay.spawnOrder !== undefined ? { spawnOrder: replay.spawnOrder } : {}),
   });
   const log: HashLogEntry[] = [];
   for (const frame of frames) {
@@ -192,6 +212,9 @@ export function replayToJson(replay: Replay): string {
   head.push(`  "numPlayers": ${replay.numPlayers}`);
   if (replay.teams !== undefined) {
     head.push(`  "teams": ${JSON.stringify(replay.teams)}`);
+  }
+  if (replay.spawnOrder !== undefined) {
+    head.push(`  "spawnOrder": ${JSON.stringify(replay.spawnOrder)}`);
   }
   head.push(`  "ticks": ${replay.ticks}`);
   const events = replay.inputs.map(
