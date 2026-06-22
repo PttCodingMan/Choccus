@@ -4,15 +4,15 @@
  *
  * Why this exists (vs bt-rank): bt-rank ranks a challenger against the six FROZEN
  * v3 archetypes and infers its standing vs every other PLACED version (e.g.
- * v4:zoner) only TRANSITIVELY, through shared v3 opponents. For a genuinely new
+ * v5:zoner) only TRANSITIVELY, through shared v3 opponents. For a genuinely new
  * strategy family that transitive edge is the least trustworthy number on the
  * board — the roster is deliberately non-transitive (RPS), so a novel family can
  * beat/lose to v4 in ways the v3-pool fit can't predict. When iterating a v5
  * design you want the ONE thing the ladder can't give cheaply: the DIRECT,
  * same-seed (CRN) head-to-head vs the bots that actually cap the frontier —
- *   - v4:zoner   = the live champion (the real SHIP GATE: beat it or it is not an
+ *   - v5:zoner   = the live champion (the real SHIP GATE: beat it or it is not an
  *                  upgrade, no matter how high the v3-pool Elo looks)
- *   - v3:trapper = the strongest blocking mirror (the historic v4 ceiling)
+ *   - v3:trapper = the strongest blocking mirror (the historic v4/v5 ceiling)
  *
  * It runs target vs each (versioned) opponent over repeats × 2 seatings × map(s)
  * under the SAME CRN seeds bt-rank/v3-bench use, and prints per-opponent observed
@@ -22,7 +22,7 @@
  * runs, so a win% shift isolates the policy change (paired A/B, low variance).
  *
  *   npm run v5-probe -- --target=v5:<arch>
- *     [--opponents=v4:zoner,v3:trapper]  versioned opponents (default = frontier)
+ *     [--opponents=v5:zoner,v3:trapper]  versioned opponents (default = frontier)
  *     [--map=classic|pirate]             default both
  *     [--repeats=40] [--workers=8] [--label=str]
  *
@@ -45,7 +45,7 @@ import {
 } from './bt-common';
 
 /** Default opponents: the two bots that cap the frontier (live champion + mirror). */
-const FRONTIER = 'v4:zoner,v3:trapper';
+const FRONTIER = 'v5:zoner,v3:trapper';
 
 /** A per-opponent observed result on one map. */
 interface Cell {
