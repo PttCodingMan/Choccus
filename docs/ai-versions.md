@@ -326,9 +326,10 @@ caps 若再動 → 重 `bt-seed` 兩圖。**v6 起建議把 `v4:zoner`／`v5:zon
 
 > 方法論：先用 **死亡軌跡診斷**（死因十秒前就有跡象）找出 v5 到底「怎麼輸」，再針對死因
 > 設計修法、A/B 測。比「猜槓桿再測」嚴謹得多。新增**空間回放**工具看 seal 怎麼合圍。
-> **結論：pirate 已在「Zoner+entrap」策略族的最佳點（鏡像是結構性對稱牆，bot 走位翻不了）；
-> classic 的天花板＝trapper 的「單寬走廊 vChain 封殺」，已用 v5-trace 看到具體長相，對症修法
-> ＝走廊感知放彈閘門（尚未實作，v6 方向）。** 本次所有改動皆 A/B 否決後還原，committed v5 不變。
+> **結論：classic 天花板＝trapper 的「單寬走廊 vChain 封殺」，`v5-trace` 看到具體長相 → 對症修法
+> 走廊感知放彈閘門 `corridorGate` ✅ 已實作出貨（classic Elo 1783→1827、trapper 58.8%→70%，見下節）。
+> pirate 死因＝收圈最後一格的結構性對稱擠壓（縮圈牆、非對手），bot 走位翻不了 → 已在「Zoner+entrap」
+> 策略族最佳點；八個 pirate 槓桿（含 corridorGate）全因過不了 v4 對稱鏡像 ship gate 而否決還原。**
 
 ### 新工具：`v5-trace`（空間死亡回放）
 `tools/sim-runner/src/v5-trace.ts`（`npm run v5-trace -- --target=v5:zoner --opponent=v4:zoner
