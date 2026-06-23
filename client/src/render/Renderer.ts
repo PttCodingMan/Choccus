@@ -102,7 +102,7 @@ export class Renderer {
   private readonly bombPool = new Map<string, HTMLDivElement>();
   private readonly explPool = new Map<
     string,
-    { node: HTMLDivElement; center: boolean; op: string }
+    { node: HTMLDivElement; mask: number; op: string }
   >();
   private readonly playerPool = new Map<number, { node: HTMLDivElement; sig: string; z: string }>();
   private readonly shellPool = new Map<
@@ -345,15 +345,19 @@ export class Renderer {
   private updateExplosions(next: SimState): void {
     const cells = new Set<string>();
     for (const c of next.explosions) cells.add(`${c.tileX},${c.tileY}`);
-    const isCenter = (x: number, y: number): boolean =>
-      (cells.has(`${x - 1},${y}`) || cells.has(`${x + 1},${y}`)) &&
-      (cells.has(`${x},${y - 1}`) || cells.has(`${x},${y + 1}`));
+    // 4-bit set of burning neighbours (1=left 2=right 4=up 8=down) → drives the
+    // directional stream shape so straight arms fuse instead of reading as beads.
+    const maskOf = (x: number, y: number): number =>
+      (cells.has(`${x - 1},${y}`) ? 1 : 0) |
+      (cells.has(`${x + 1},${y}`) ? 2 : 0) |
+      (cells.has(`${x},${y - 1}`) ? 4 : 0) |
+      (cells.has(`${x},${y + 1}`) ? 8 : 0);
 
     const seen = new Set<string>();
     for (const c of next.explosions) {
       const key = `${c.tileX},${c.tileY}`;
       seen.add(key);
-      const center = isCenter(c.tileX, c.tileY);
+      const mask = maskOf(c.tileX, c.tileY);
       let v = this.explPool.get(key);
       if (v === undefined) {
         // No will-change here: a chain detonates many cells in one frame, and
@@ -364,12 +368,12 @@ export class Renderer {
             `width:${TW}px;height:${TH}px;z-index:${rowZ(c.tileY, Z.EXPL)};`,
         );
         this.explLayer.appendChild(node);
-        v = { node, center: !center, op: '' };
+        v = { node, mask: -1, op: '' };
         this.explPool.set(key, v);
       }
-      if (v.center !== center) {
-        v.node.innerHTML = explosionHtml(center);
-        v.center = center;
+      if (v.mask !== mask) {
+        v.node.innerHTML = explosionHtml(mask);
+        v.mask = mask;
       }
       // Fade out only over the final few ticks ("flame shown = it burns").
       const fade = Math.max(0, Math.min(1, c.ttlTicks / 5));

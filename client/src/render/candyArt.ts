@@ -17,7 +17,8 @@ import { ItemKind } from '../../../shared/types';
 export const TW = 48;
 export const TH = 44;
 export const PAD_X = 16;
-export const PAD_TOP = 24;
+// Top band hosts the floating timer pill (y 8–56), so keep tiles clear of it.
+export const PAD_TOP = 62;
 export const PAD_BOT = 14;
 // Subtle thickness so tiles overlap the row behind (via per-row z-index in the
 // Renderer) — a gentle layered look, not the old chunky 2.5D cube.
@@ -237,27 +238,77 @@ export function itemHtml(kind: number): string {
 }
 
 /**
- * Melt-flow cell. The cream body and amber halo are BOTH oversized (overflow the
- * cell), so adjacent burning cells overlap into one continuous cream stream with
- * a fused glowing corridor — no goo-filter needed. All fills are radial/solid
- * (no box-shadow blur on the many arm cells) to stay cheap on a chain. `center`
- * adds the white-hot core + droplets.
+ * Melt-flow cell, drawn as a DIRECTIONAL stream rather than a per-cell blob so a
+ * straight arm fuses into one continuous tube instead of a string of beads.
+ * `mask` is the 4-bit set of burning neighbours (1=left 2=right 4=up 8=down): a
+ * cream capsule + amber halo is drawn toward each present neighbour, overflowing
+ * the cell edge so adjacent runs overlap — crosses, corners and T-junctions form
+ * for free. A cell with exactly one neighbour is an arm TIP (or mask 0, a lone
+ * cell) and caps its outer end with a rounded flame-head bulb — the only cell
+ * whose shape reads differently. The cross origin adds the white-hot core. All
+ * fills are linear/radial/solid (no box-shadow blur on arm cells → cheap on a
+ * chain); colours never change with shape.
  */
-export function explosionHtml(center: boolean): string {
-  let h =
-    // Amber halo — the "火力". Wide enough that neighbours' halos merge into a
-    // glowing river and lift the pale cream off the pale floor.
-    `<div style="position:absolute;left:${CX - 38}px;top:${CY - 35}px;width:76px;height:70px;border-radius:50%;` +
-    `background:radial-gradient(circle,${MILK.explGlow},transparent 72%);"></div>` +
-    // Soft contact shadow under the cream → reads as a raised flow, not floor.
-    `<div style="position:absolute;left:${CX - 28}px;top:${CY - 18}px;width:56px;height:52px;border-radius:50%;` +
-    `background:radial-gradient(closest-side,${MILK.explShadow},transparent);"></div>` +
-    // Flowing cream body — oversized (56×52 in a 48×44 cell) so runs merge.
-    `<div style="position:absolute;left:${CX - 28}px;top:${CY - 26}px;width:56px;height:52px;` +
-    `border-radius:52% 48% 50% 50%/54% 50% 50% 46%;` +
-    `background:radial-gradient(circle at 42% 34%,${MILK.explHi},${MILK.explMid} 50%,${MILK.explLo});"></div>`;
+export function explosionHtml(mask: number): string {
+  const L = mask & 1,
+    R = mask & 2,
+    U = mask & 4,
+    D = mask & 8;
+  const horiz = L || R;
+  const vert = U || D;
+  const center = horiz && vert;
+  // Shade ACROSS the flow (perpendicular), not per-cell radial → one continuous
+  // top-lit ribbon with no repeating per-cell highlight blob.
+  const creamH = `linear-gradient(180deg,${MILK.explHi},${MILK.explMid} 45%,${MILK.explLo})`;
+  const creamV = `linear-gradient(90deg,${MILK.explHi},${MILK.explMid} 45%,${MILK.explLo})`;
+  // Round only OUTER caps (no neighbour on that side); square the inner joins so
+  // adjacent cells tile into one seamless tube instead of a string of capsules.
+  const r = (a: number, b: number) => `${a}px ${b}px ${b}px ${a}px`; // [left/top, right/bot]
+  let h = '';
+
+  // Amber halo "river" along each flowing axis (soft-edged via gradient, no blur)
+  // — neighbours' halos overlap into one continuous glowing corridor.
+  // Inner ends abut (+1px) rather than overflow, so a semi-transparent neighbour
+  // halo doesn't stack into a bright seam line at each join.
+  if (horiz) {
+    const x0 = L ? -1 : CX - 17,
+      x1 = R ? TW + 1 : CX + 17;
+    h += `<div style="position:absolute;left:${x0}px;top:${CY - 17}px;width:${x1 - x0}px;height:34px;border-radius:${r(L ? 0 : 17, R ? 0 : 17)};` +
+      `background:linear-gradient(180deg,transparent,${MILK.explGlow} 26%,${MILK.explGlow} 74%,transparent);"></div>`;
+  }
+  if (vert) {
+    const y0 = U ? -1 : CY - 17,
+      y1 = D ? TH + 1 : CY + 17;
+    h += `<div style="position:absolute;left:${CX - 17}px;top:${y0}px;width:34px;height:${y1 - y0}px;border-radius:${r(U ? 0 : 17, D ? 0 : 17)};` +
+      `background:linear-gradient(90deg,transparent,${MILK.explGlow} 26%,${MILK.explGlow} 74%,transparent);"></div>`;
+  }
+
+  // Cream stream: a fat ribbon toward each neighbour, overflowing ±6px to fuse;
+  // inner end square (tiles seamlessly), outer end rounded (clean arm cap).
+  if (horiz) {
+    const x0 = L ? -6 : CX - 12,
+      x1 = R ? TW + 6 : CX + 12;
+    h += `<div style="position:absolute;left:${x0}px;top:${CY - 12}px;width:${x1 - x0}px;height:24px;border-radius:${r(L ? 0 : 12, R ? 0 : 12)};background:${creamH};"></div>`;
+  }
+  if (vert) {
+    const y0 = U ? -6 : CY - 12,
+      y1 = D ? TH + 6 : CY + 12;
+    h += `<div style="position:absolute;left:${CX - 12}px;top:${y0}px;width:24px;height:${y1 - y0}px;border-radius:${r(U ? 0 : 12, D ? 0 : 12)};background:${creamV};"></div>`;
+  }
+
+  // Arm tip (one neighbour) or lone cell: rounded flame-head bulb on the OUTER
+  // end (opposite the neighbour; centre for a lone cell) — the cell that differs.
+  if (mask === 0 || mask === 1 || mask === 2 || mask === 4 || mask === 8) {
+    const hx = R ? CX - 16 : L ? CX + 16 : CX;
+    const hy = D ? CY - 14 : U ? CY + 14 : CY;
+    h += `<div style="position:absolute;left:${hx - 19}px;top:${hy - 19}px;width:38px;height:38px;border-radius:50%;` +
+      `background:radial-gradient(circle,${MILK.explGlow},transparent 70%);"></div>` +
+      `<div style="position:absolute;left:${hx - 15}px;top:${hy - 15}px;width:30px;height:30px;border-radius:50%;` +
+      `background:radial-gradient(circle at 38% 34%,${MILK.explHi},${MILK.explMid} 52%,${MILK.explLo});"></div>`;
+  }
+
   if (center) {
-    // Only one centre cell per blast → a little extra detail here is affordable.
+    // White-hot core + droplets at the blast origin (junctions are few).
     h +=
       `<div style="position:absolute;left:${CX - 16}px;top:${CY - 14}px;width:32px;height:28px;border-radius:50%;` +
       `background:radial-gradient(circle,#fff,${MILK.explCore} 72%);box-shadow:0 0 14px 4px ${MILK.explGlow};"></div>` +
