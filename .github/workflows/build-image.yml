@@ -1,10 +1,8 @@
 name: build-image
 
-# PRs run the gate (lint + tests) and push a sha-tagged test image you can
-# spin a server from; main additionally moves the `latest` tag. Tests
-# deliberately do NOT re-run on main: branch protection
-# requires PRs to be up to date before merge, so the merged code == the tested
-# PR code and a main re-run would be pure redundancy.
+# Builds the Docker image and pushes it to ghcr. PRs push a `dev` + `sha-`
+# tagged test image you can spin a server from; main additionally moves the
+# `latest` tag. The merge gate (lint + tests) lives in test.yml.
 on:
   pull_request:
   push:
@@ -15,44 +13,20 @@ permissions:
   packages: write
 
 jobs:
-  test-js:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test:ci
-
-  test-py:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r server/requirements.txt
-      - run: python -m pytest server/tests -q
-
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # PRs push a sha-tagged test image (the `latest` tag is gated to the
-      # default branch below, so PRs never move it). Fork PRs get a read-only
-      # token and would fail to push, but this repo only builds its own branches.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # `latest` only on main; PRs move `dev` and always get an immutable sha
+      # tag. Fork PRs get a read-only token and would fail to push, but this
+      # repo only builds its own branches.
       - id: meta
         uses: docker/metadata-action@v5
         with:
