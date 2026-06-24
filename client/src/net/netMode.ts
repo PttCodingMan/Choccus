@@ -301,6 +301,12 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     u.search = '?mode=solo';
     window.location.assign(u.toString());
   };
+  ui.onGuide = () => {
+    // Navigate to the illustrated how-to-play guide page.
+    const u = new URL(window.location.href);
+    u.search = '?mode=guide';
+    window.location.assign(u.toString());
+  };
   ui.onReconnect = () => {
     void (async () => {
       ui.showDisconnected('Reconnecting…', false);

@@ -131,7 +131,8 @@ function parseLineup(raw: string | null): Contestant[] {
 
 /** Map kind: ?map=classic|pirate (case-insensitive); anything else → classic. */
 function parseMapKind(raw: string | null): MapKind {
-  return raw?.toLowerCase() === 'pirate' ? 'pirate' : 'classic';
+  const r = raw?.toLowerCase();
+  return r === 'pirate' ? 'pirate' : r === 'village' ? 'village' : 'classic';
 }
 
 /** Speed multiplier: ?speed=1|2|4|8; anything else → 4. */
@@ -255,6 +256,7 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
   for (const [value, text] of [
     ['classic', 'Classic'],
     ['pirate', 'Pirate'],
+    ['village', 'Village'],
   ] as const) {
     const opt = document.createElement('option');
     opt.value = value;

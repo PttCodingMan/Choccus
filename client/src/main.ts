@@ -44,6 +44,7 @@ import { type SimState, createInitialState, tick } from './sim/Sim';
 import { LossRecorder } from './solo/lossRecorder';
 import { runSpectate } from './spectate/spectateMode';
 import { FeelPanel } from './ui/FeelPanel';
+import { runGuide } from './ui/guidePage';
 
 /**
  * Pick a fresh uint32 seed for a solo match. Using Math.random() here is fine:
@@ -221,11 +222,13 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       : 'Solo — Arrows move · Space drops chocolate';
   };
 
-  // Map kind: ?map=classic|pirate (case-insensitive); anything else → classic.
+  // Map kind: ?map=classic|pirate|village (case-insensitive); else → classic.
   const parseMapKind = (raw: string | null): MapKind => {
     switch (raw?.toLowerCase()) {
       case 'pirate':
         return 'pirate';
+      case 'village':
+        return 'village';
       default:
         return 'classic';
     }
@@ -374,6 +377,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const mapOptions: ReadonlyArray<readonly [MapKind, string]> = [
     ['classic', 'Classic'],
     ['pirate', 'Pirate'],
+    ['village', 'Village'],
   ];
   for (const [value, label] of mapOptions) {
     const opt = document.createElement('option');
@@ -541,6 +545,8 @@ if (mode === 'spectate') {
   void runSpectate(params);
 } else if (mode === 'solo') {
   void bootstrapSolo(params);
+} else if (mode === 'guide') {
+  runGuide(params);
 } else {
   // Default (and ?mode=net) → online lobby.
   void runNetMode(params);

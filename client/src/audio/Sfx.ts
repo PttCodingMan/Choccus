@@ -151,35 +151,46 @@ class SfxEngine {
   }
 
   /**
-   * explode() — deep, low "whoomph" with a heavy sub-bass thud.
-   * Lowpass-swept noise (1.2 kHz → 90 Hz) + low sine thump (55→30 Hz)
-   * + sub-bass sine (38→22 Hz) for body. Longer decay for weight.
-   * ~700 ms total.
+   * explode() — long wet cream squeeze "噗嘰~~~".
+   * Deliberately noise-dominated (wet/airy, barely tonal) so it reads as piped
+   * cream, not electronics: a soft low "噗" body + a gentle TRIANGLE squeak that
+   * bends up then eases down (the "嘰~", NO buzzy flutter LFO) + a lowpass-noise
+   * "ffff" spray sweeping down. Softer + longer (~0.85 s) than the old sawtooth.
    */
   explode(): void {
     const ctx = this.ensure();
     if (ctx === null) return;
     const t = ctx.currentTime;
+    const dur = 0.85; // drawn-out 噗嘰~~~
 
-    // Noise whoomph — darker filter sweep, longer tail.
-    const [, filt, nEnv] = this.noise('lowpass', 1200, t, 0.7);
-    filt.frequency.exponentialRampToValueAtTime(90, t + 0.5);
-    nEnv.gain.setValueAtTime(0.5, t);
-    nEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    // Soft squish body "噗": low sine plop leads the squeeze, gives it weight.
+    const [sub, sEnv] = this.osc('sine', 95, t);
+    sub.frequency.exponentialRampToValueAtTime(42, t + 0.35);
+    sEnv.gain.setValueAtTime(0.3, t);
+    sEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    sub.stop(t + 0.42);
 
-    // Low sine thump.
-    const [osc, oEnv] = this.osc('sine', 55, t);
-    osc.frequency.setTargetAtTime(30, t, 0.06);
-    oEnv.gain.setValueAtTime(0.55, t);
-    oEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
-    osc.stop(t + 0.46);
+    // Squeeze squeak "嘰~": a SOFT triangle (not buzzy sawtooth, no flutter LFO).
+    // Bends up as cream is forced out, then eases down. Kept quiet so the wet
+    // noise dominates → squelchy and organic, not tonal/electronic.
+    const [osc, oEnv] = this.osc('triangle', 130, t);
+    osc.frequency.setValueAtTime(130, t);
+    osc.frequency.linearRampToValueAtTime(240, t + 0.12);
+    osc.frequency.exponentialRampToValueAtTime(85, t + dur);
+    oEnv.gain.setValueAtTime(0.0, t);
+    oEnv.gain.linearRampToValueAtTime(0.18, t + 0.05);
+    oEnv.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.stop(t + dur + 0.02);
 
-    // Sub-bass body — felt more than heard, gives the "low" weight.
-    const [sub, sEnv] = this.osc('sine', 38, t);
-    sub.frequency.setTargetAtTime(22, t, 0.08);
-    sEnv.gain.setValueAtTime(0.45, t);
-    sEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-    sub.stop(t + 0.56);
+    // Wet airy "ffff" spray: LOWPASS noise (rounder/wetter than bandpass), centre
+    // sweeping down as the cream eases out — this is the bulk of the sound.
+    const [, nFilt, nEnv] = this.noise('lowpass', 1500, t, dur);
+    nFilt.frequency.setValueAtTime(1500, t);
+    nFilt.frequency.exponentialRampToValueAtTime(240, t + dur);
+    nFilt.Q.value = 0.7;
+    nEnv.gain.setValueAtTime(0.0, t);
+    nEnv.gain.linearRampToValueAtTime(0.22, t + 0.04);
+    nEnv.gain.exponentialRampToValueAtTime(0.001, t + dur);
   }
 
   /**

@@ -31,7 +31,37 @@ import { prngFloat, prngInt } from './Prng';
 export type TileGrid = Uint8Array;
 
 /** Map layout variant. Selected per match via opts, never randomly. */
-export type MapKind = 'classic' | 'pirate';
+export type MapKind = 'classic' | 'pirate' | 'village';
+
+/**
+ * The authored 'village' layout (an ORIGINAL design inspired by the openness /
+ * rhythm of a classic village map — NOT a tile-for-tile copy; map LAYOUT is
+ * protected art, see CLAUDE.md §三). A plus-shaped EMPTY road cross (vertical
+ * lane col 7 + horizontal lane row 6) divides four soft-brick quadrants, with an
+ * irregular scatter of HARD anchors (cols 2/5/9/12 on the lattice rows) instead
+ * of the regular even lattice. The `P` PUSHABLE bricks render as wooden X-crates
+ * (see candyArt cubeHtml) and LINE THE ROAD LANES — columns 6 & 8 hug the
+ * vertical lane, and a few flank the horizontal lane — mirroring the crate-lined
+ * roads of the source map. Every crate sits one tile off an EMPTY lane so it can
+ * be shoved into it (see Player.ts tryPush). Like 'pirate' it is fully authored
+ * and draws ZERO PRNG values. `#`=HARD, `S`=SOFT, `P`=PUSH, `.`=EMPTY; spawn
+ * corners are forced EMPTY by the spawn-clear override regardless of the template.
+ */
+const VILLAGE_TEMPLATE: readonly string[] = [
+  '###############',
+  '#SSSSSS.SSSSSS#',
+  '#S#SS#S.S#SS#S#',
+  '#SSSSSP.PSSSSS#',
+  '#S#SS#S.S#SS#S#',
+  '#SSPSSP.PSSPSS#',
+  '#.............#',
+  '#SSPSSP.PSSPSS#',
+  '#S#SS#S.S#SS#S#',
+  '#SSSSSP.PSSSSS#',
+  '#S#SS#S.S#SS#S#',
+  '#SSSSSS.SSSSSS#',
+  '###############',
+];
 
 /**
  * The authored 'pirate' layout: 13 rows of 15 chars each, row index = y,
@@ -56,25 +86,26 @@ const PIRATE_TEMPLATE: readonly string[] = [
   '###############',
 ];
 
-// Validate the authored template at module load so a typo fails loudly.
-if (PIRATE_TEMPLATE.length !== MAP_ROWS) {
-  throw new Error(
-    `PIRATE_TEMPLATE must have ${MAP_ROWS} rows, got ${PIRATE_TEMPLATE.length}`,
-  );
-}
-for (let y = 0; y < PIRATE_TEMPLATE.length; y++) {
-  const row = PIRATE_TEMPLATE[y]!;
-  if (row.length !== MAP_COLS) {
-    throw new Error(
-      `PIRATE_TEMPLATE row ${y} must be ${MAP_COLS} chars, got ${row.length}`,
-    );
+// Validate the authored templates at module load so a typo fails loudly.
+function validateTemplate(name: string, tmpl: readonly string[]): void {
+  if (tmpl.length !== MAP_ROWS) {
+    throw new Error(`${name} must have ${MAP_ROWS} rows, got ${tmpl.length}`);
+  }
+  for (let y = 0; y < tmpl.length; y++) {
+    const row = tmpl[y]!;
+    if (row.length !== MAP_COLS) {
+      throw new Error(`${name} row ${y} must be ${MAP_COLS} chars, got ${row.length}`);
+    }
   }
 }
+validateTemplate('PIRATE_TEMPLATE', PIRATE_TEMPLATE);
+validateTemplate('VILLAGE_TEMPLATE', VILLAGE_TEMPLATE);
 
-/** Map a single template char to its TileKind. */
-function pirateTile(ch: string): TileKind {
+/** Map a single template char to its TileKind (`#`/`S`/`P`/`.`). */
+function templateTile(ch: string): TileKind {
   if (ch === '#') return TileKind.HARD;
   if (ch === 'S') return TileKind.SOFT;
+  if (ch === 'P') return TileKind.PUSH;
   return TileKind.EMPTY;
 }
 
@@ -173,16 +204,17 @@ export function generateMap(
 ): [TileGrid, number] {
   const grid = new Uint8Array(MAP_COLS * MAP_ROWS);
 
-  if (kind === 'pirate') {
-    // Fully authored layout: fill from the template, then apply the SAME
+  if (kind === 'pirate' || kind === 'village') {
+    // Fully authored layouts: fill from the template, then apply the SAME
     // spawn-clear override the rolled kinds use (this opens the four spawn
-    // corners that the template marks SOFT). Zero PRNG draws — the incoming
-    // state is returned UNCHANGED on purpose.
+    // corners). Zero PRNG draws — the incoming state is returned UNCHANGED on
+    // purpose, so these kinds never perturb the shared PRNG stream.
+    const tmpl = kind === 'pirate' ? PIRATE_TEMPLATE : VILLAGE_TEMPLATE;
     for (let y = 0; y < MAP_ROWS; y++) {
       for (let x = 0; x < MAP_COLS; x++) {
         grid[idx(x, y)] = isSpawnClear(x, y)
           ? TileKind.EMPTY
-          : pirateTile(PIRATE_TEMPLATE[y]![x]!);
+          : templateTile(tmpl[y]![x]!);
       }
     }
     return [grid, prng];

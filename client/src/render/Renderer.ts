@@ -17,6 +17,7 @@
  * shells — matching the old stack (flames cover players, shells cover flames).
  */
 import {
+  FUSE_TICKS,
   MAP_COLS,
   MAP_ROWS,
   MATCH_MAX_TICKS,
@@ -32,7 +33,7 @@ import type { SimState } from '../sim/Sim';
 import {
   boardCss,
   boardSize,
-  bombHtml,
+  cakeBombHtml,
   CANDY_KEYFRAMES,
   cellLeft,
   cellTop,
@@ -43,6 +44,7 @@ import {
   PAD_TOP,
   PAD_X,
   playerHtml,
+  setCandleFuse,
   shellHtml,
   teamPalette,
   TH,
@@ -99,10 +101,13 @@ export class Renderer {
   private readonly cards: HTMLDivElement;
 
   private readonly itemPool = new Map<string, HTMLDivElement>();
-  private readonly bombPool = new Map<string, HTMLDivElement>();
+  private readonly bombPool = new Map<
+    string,
+    { node: HTMLDivElement; candle: HTMLElement; flame: HTMLElement }
+  >();
   private readonly explPool = new Map<
     string,
-    { node: HTMLDivElement; mask: number; op: string }
+    { node: HTMLDivElement; mask: number; op: string; shown: boolean }
   >();
   private readonly playerPool = new Map<number, { node: HTMLDivElement; sig: string; z: string }>();
   private readonly shellPool = new Map<
@@ -214,7 +219,7 @@ export class Renderer {
     this.updateItems(next);
     this.updateBombs(next);
     this.updatePlayers(prev, next, alpha);
-    this.updateExplosions(next);
+    this.updateExplosions(prev, next);
     this.updateShells(prev, next, alpha);
     this.updateHud(next);
   }
@@ -282,20 +287,27 @@ export class Renderer {
     for (const b of next.bombs) {
       const key = `${b.tileX},${b.tileY}`;
       seen.add(key);
-      let node = this.bombPool.get(key);
-      if (node === undefined) {
-        node = div(
+      let v = this.bombPool.get(key);
+      if (v === undefined) {
+        const node = div(
           `position:absolute;left:${cellLeft(b.tileX)}px;top:${cellTop(b.tileY)}px;` +
             `width:${TW}px;height:${TH}px;will-change:transform;z-index:${rowZ(b.tileY, Z.BOMB)};`,
         );
-        node.innerHTML = bombHtml();
+        node.innerHTML = cakeBombHtml();
         this.bombLayer.appendChild(node);
-        this.bombPool.set(key, node);
+        v = {
+          node,
+          candle: node.querySelector<HTMLElement>('.cc-candle')!,
+          flame: node.querySelector<HTMLElement>('.cc-flame-el')!,
+        };
+        this.bombPool.set(key, v);
       }
-      node.style.display = 'block';
+      // Melt the candle down with the fuse (the burning-candle fuse).
+      setCandleFuse(v.candle, v.flame, b.fuseTicks / FUSE_TICKS);
+      v.node.style.display = 'block';
     }
-    for (const [key, node] of this.bombPool) {
-      if (!seen.has(key)) node.style.display = 'none';
+    for (const [key, v] of this.bombPool) {
+      if (!seen.has(key)) v.node.style.display = 'none';
     }
   }
 
@@ -342,9 +354,24 @@ export class Renderer {
   }
 
   // -- Explosions (tile-locked; center = bright ring/core/drops) -------------
-  private updateExplosions(next: SimState): void {
+  private updateExplosions(prev: SimState, next: SimState): void {
     const cells = new Set<string>();
     for (const c of next.explosions) cells.add(`${c.tileX},${c.tileY}`);
+    // Blast origins = bombs that vanished this tick (detonated). The whole cross
+    // spawns on one tick, so to read as "erupting from centre" each cell pops in
+    // staggered by its tile-distance to the nearest origin (centre first, arms
+    // ripple out) — a quick wave. Render-only; sim stays instant.
+    const liveBombs = new Set<string>();
+    for (const b of next.bombs) liveBombs.add(`${b.tileX},${b.tileY}`);
+    const origins: Array<[number, number]> = [];
+    for (const b of prev.bombs)
+      if (!liveBombs.has(`${b.tileX},${b.tileY}`)) origins.push([b.tileX, b.tileY]);
+    const ringOf = (x: number, y: number): number => {
+      let best = Infinity;
+      for (const [ox, oy] of origins)
+        best = Math.min(best, Math.abs(x - ox) + Math.abs(y - oy));
+      return best === Infinity ? 0 : best;
+    };
     // 4-bit set of burning neighbours (1=left 2=right 4=up 8=down) → drives the
     // directional stream shape so straight arms fuse instead of reading as beads.
     const maskOf = (x: number, y: number): number =>
@@ -368,12 +395,25 @@ export class Renderer {
             `width:${TW}px;height:${TH}px;z-index:${rowZ(c.tileY, Z.EXPL)};`,
         );
         this.explLayer.appendChild(node);
-        v = { node, mask: -1, op: '' };
+        v = { node, mask: -1, op: '', shown: false };
         this.explPool.set(key, v);
       }
       if (v.mask !== mask) {
         v.node.innerHTML = explosionHtml(mask);
         v.mask = mask;
+      }
+      // Newly appearing (incl. reused pool node) → burst-pop, delayed by ring so
+      // the cross erupts outward from its origin. WAAPI restarts cleanly on reuse.
+      if (!v.shown) {
+        v.shown = true;
+        v.node.animate(
+          [
+            { transform: 'scale(.3)', opacity: 0 },
+            { transform: 'scale(1.1)', opacity: 1, offset: 0.5 },
+            { transform: 'scale(1)' },
+          ],
+          { duration: 160, delay: ringOf(c.tileX, c.tileY) * 28, easing: 'ease-out' },
+        );
       }
       // Fade out only over the final few ticks ("flame shown = it burns").
       const fade = Math.max(0, Math.min(1, c.ttlTicks / 5));
@@ -385,7 +425,10 @@ export class Renderer {
       v.node.style.display = 'block';
     }
     for (const [key, v] of this.explPool) {
-      if (!seen.has(key)) v.node.style.display = 'none';
+      if (!seen.has(key)) {
+        v.node.style.display = 'none';
+        v.shown = false; // re-arm the pop if this tile burns again
+      }
     }
   }
 
@@ -552,6 +595,8 @@ function tileInner(kind: number, x: number, y: number): string {
       ? cubeHtml('wall')
       : kind === TileKind.SOFT
         ? cubeHtml('block')
-        : '')
+        : kind === TileKind.PUSH
+          ? cubeHtml('push')
+          : '')
   );
 }

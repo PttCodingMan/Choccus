@@ -43,7 +43,7 @@ import type { SimState } from '../../sim/Sim';
 import type { BombState } from '../../sim/Bomb';
 import { idx, inBounds } from '../../sim/Map';
 import { MAP_COLS, MAP_ROWS, SPARK_TICKS } from '../../../../shared/constants';
-import { TileKind } from '../../../../shared/types';
+import { TileKind, isDestructibleBrick } from '../../../../shared/types';
 
 /** Cross-arm deltas in DIRECTION_ORDER (UP, DOWN, LEFT, RIGHT). */
 const ARM_DELTAS: ReadonlyArray<readonly [number, number]> = [
@@ -133,11 +133,11 @@ export function buildDangerMap(
         const ty = bomb.tileY + dy * step;
         if (!inBounds(tx, ty)) break;
         const tile = idx(tx, ty);
-        const kind = state.map[tile];
+        const kind = state.map[tile]!;
         if (kind === TileKind.HARD) break;
-        if (kind === TileKind.SOFT) {
-          // Brick is solid until detonation, cleared at t with NO flame cell →
-          // lethal only on the exact detonate tick.
+        if (isDestructibleBrick(kind)) {
+          // SOFT or pushable PUSH brick: solid until detonation, cleared at t
+          // with NO flame cell → lethal only on the exact detonate tick.
           stamp(tile, t, t + 1);
           break;
         }

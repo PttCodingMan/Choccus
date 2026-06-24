@@ -24,7 +24,7 @@ import { idx, inBounds } from '../../sim/Map';
 import { dirDX, dirDY, isOpen } from '../../sim/Player';
 import { explosionAt } from '../../sim/Explosion';
 import { FUSE_TICKS, MAP_COLS } from '../../../../shared/constants';
-import { Direction, TileKind } from '../../../../shared/types';
+import { Direction, TileKind, isDestructibleBrick } from '../../../../shared/types';
 
 /** Tile-walkability predicate for BFS expansion (the start tile is exempt). */
 export type Passable = (x: number, y: number) => boolean;
@@ -255,9 +255,11 @@ export function predictDanger(
         const tx = b.tileX + dx * step;
         const ty = b.tileY + dy * step;
         if (!inBounds(tx, ty)) break;
-        const t = state.map[idx(tx, ty)];
+        const t = state.map[idx(tx, ty)]!;
         if (t === TileKind.HARD) break;
-        if (t === TileKind.SOFT) {
+        if (isDestructibleBrick(t)) {
+          // SOFT or pushable PUSH brick: blast stops + marks it (word-aligned
+          // with Explosion.ts).
           minSet(idx(tx, ty), b.fuseTicks);
           break;
         }
