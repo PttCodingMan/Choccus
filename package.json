@@ -12,6 +12,7 @@
     "dev": "npm run dev --workspace @choccus/client",
     "build": "npm run build --workspace @choccus/client",
     "test": "cd tools/sim-runner && npm test",
+    "test:ci": "cd tools/sim-runner && npm run test:ci",
     "lint": "npm run lint --workspace @choccus/client",
     "serve": "bash scripts/serve.sh",
     "serve:rebuild": "bash scripts/serve.sh --rebuild"
