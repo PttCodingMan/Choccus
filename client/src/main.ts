@@ -44,6 +44,7 @@ import { type SimState, createInitialState, tick } from './sim/Sim';
 import { LossRecorder } from './solo/lossRecorder';
 import { runSpectate } from './spectate/spectateMode';
 import { FeelPanel } from './ui/FeelPanel';
+import { runGuide } from './ui/guidePage';
 
 /**
  * Pick a fresh uint32 seed for a solo match. Using Math.random() here is fine:
@@ -541,6 +542,8 @@ if (mode === 'spectate') {
   void runSpectate(params);
 } else if (mode === 'solo') {
   void bootstrapSolo(params);
+} else if (mode === 'guide') {
+  runGuide(params);
 } else {
   // Default (and ?mode=net) → online lobby.
   void runNetMode(params);

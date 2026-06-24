@@ -164,6 +164,8 @@ export class LobbyUI {
   onReconnect?: () => void;
   /** Enter the offline single-player practice mode. */
   onSolo?: () => void;
+  /** Open the illustrated how-to-play guide page. */
+  onGuide?: () => void;
   /** Build the shareable invite URL for a room id (injected by netMode). */
   buildInviteUrl?: (roomId: string) => string;
 
@@ -282,6 +284,9 @@ export class LobbyUI {
     const soloRow = el('div', 'margin-top:4px;', this.landing);
     button(soloRow, '🍫 Solo Practice').addEventListener('click', () =>
       this.onSolo?.(),
+    );
+    button(soloRow, '📖 玩法介紹').addEventListener('click', () =>
+      this.onGuide?.(),
     );
 
     // Sound toggle + "click to enable" hint.
