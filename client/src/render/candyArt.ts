@@ -132,38 +132,35 @@ export function floorHtml(checker: number): string {
 export function cubeHtml(kind: 'wall' | 'block' | 'push'): string {
   const pop = kind === 'wall' ? POP_WALL : POP_BLOCK;
   if (kind === 'push') {
-    // Pushable brick = a wooden X-crate (caramel-biscuit box with a chocolate X
-    // cross-brace): a warm tan — close to the cake soft brick's colour, "差不多" —
-    // but stamped with the diagonal X that marks it as a shovable crate ("有一點
-    // 區別"). Mirrors the yellow X-crates that are the pushable pieces on the map.
+    // Pushable brick = a Swiss-roll cake (瑞士捲): SAME cream-cake colour family
+    // as the soft brick ("差不多"), but the top face shows a roll-cake SPIRAL —
+    // concentric sponge/cream rings, the swirl of a roll-cake cross-section — so
+    // it reads instantly as a *different kind of cake* you can shove ("有一點區別").
     const x = 2;
     const w = TW - 4;
     const topH = TH - 4;
     const sideTop = -pop + topH;
     const sideH = pop + 6;
-    const strapLen = Math.round(w * 1.28);
-    const strapW = 6;
     const cxp = x + w / 2;
-    const cyp = -pop + topH / 2;
-    const strap = (deg: number): string =>
-      `<div style="position:absolute;left:${cxp - strapLen / 2}px;top:${cyp - strapW / 2}px;` +
-      `width:${strapLen}px;height:${strapW}px;border-radius:3px;` +
-      `background:linear-gradient(180deg,#A9703C,#7A4A22);transform:rotate(${deg}deg);` +
-      `box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 1px 1px rgba(80,50,20,.3);"></div>`;
+    const cyc = -pop + topH / 2; // top-face centre
+    // One concentric ring of the spiral, centred on the top face.
+    const ring = (cw: number, ch: number, col: string): string =>
+      `<div style="position:absolute;left:${cxp - cw / 2}px;top:${cyc - ch / 2}px;` +
+      `width:${cw}px;height:${ch}px;border-radius:50%;background:${col};"></div>`;
     return (
-      // side (crate thickness) — caramel, a touch deeper than the cake brick side
+      // sponge side (cake thickness)
       `<div style="position:absolute;left:${x}px;top:${sideTop}px;width:${w}px;height:${sideH}px;` +
-      `border-radius:0 0 7px 7px;background:linear-gradient(180deg,#C8A465,#A6814A);"></div>` +
-      // crate lid (top face) — warm caramel
-      `<div style="position:absolute;left:${x}px;top:${-pop}px;width:${w}px;height:${topH}px;border-radius:7px;` +
-      `background:linear-gradient(180deg,#E6C485,#CDA961);` +
-      `box-shadow:inset 0 2px 2px rgba(255,255,255,.4),inset 0 -3px 4px rgba(120,80,30,.35);"></div>` +
-      // plank frame (darker wooden border)
-      `<div style="position:absolute;left:${x + 2}px;top:${-pop + 2}px;width:${w - 4}px;height:${topH - 4}px;` +
-      `border-radius:5px;box-shadow:inset 0 0 0 2px rgba(120,78,34,.55);"></div>` +
-      // chocolate X cross-brace (the tell)
-      strap(45) +
-      strap(-45)
+      `border-radius:0 0 12px 12px;background:linear-gradient(180deg,#D8B87E,#BF9B5E);"></div>` +
+      // sponge top face
+      `<div style="position:absolute;left:${x}px;top:${-pop}px;width:${w}px;height:${topH}px;border-radius:12px 12px 0 0;` +
+      `background:linear-gradient(180deg,#EFD6A6,#DCBC82);"></div>` +
+      // roll-cake spiral: alternating sponge / cream rings, outer → centre
+      ring(w - 6, topH - 8, '#C99B5A') +
+      ring(w - 16, topH - 17, '#F3E2BC') +
+      ring(w - 26, topH - 26, '#C99B5A') +
+      ring(10, 9, '#F3E2BC') +
+      `<div style="position:absolute;left:${cxp - 1.5}px;top:${cyc - 1.5}px;width:3px;height:3px;` +
+      `border-radius:50%;background:#B5863F;"></div>`
     );
   }
   const x = 2;
@@ -182,34 +179,36 @@ export function cubeHtml(kind: 'wall' | 'block' | 'push'): string {
       `<div style="position:absolute;left:${x}px;top:${-pop}px;width:${w}px;height:${topH}px;border-radius:12px 12px 0 0;` +
       `background:linear-gradient(150deg,${c.hi},${c.base} 52%,${c.lo});` +
       `box-shadow:inset 0 2px 3px rgba(255,255,255,.22),inset 0 -4px 6px rgba(0,0,0,.34);"></div>` +
-      // embossed molded square (the chocolate-bar segment): dark groove + inner sheen
-      `<div style="position:absolute;left:9px;top:${-pop + 5}px;width:${TW - 18}px;height:${topH - 13}px;border-radius:8px;` +
+      // embossed molded square (the chocolate-bar segment): dark groove + inner
+      // sheen — CENTRED at the same footprint (w-6 × topH-8) as the bricks' topping
+      // so the wall reads at the same top-down angle, not top-heavy
+      `<div style="position:absolute;left:${x + 3}px;top:${-pop + 4}px;width:${w - 6}px;height:${topH - 8}px;border-radius:12px;` +
       `box-shadow:inset 0 0 0 1px rgba(0,0,0,.26),inset 0 2px 2px rgba(255,255,255,.16),inset 0 -3px 4px rgba(0,0,0,.28);"></div>` +
       // tempered sheen streak across the segment top
-      `<div style="position:absolute;left:9px;top:${-pop + 4}px;width:${TW - 18}px;height:7px;border-radius:7px;` +
+      `<div style="position:absolute;left:${x + 3}px;top:${-pop + 4}px;width:${w - 6}px;height:7px;border-radius:7px;` +
       `background:linear-gradient(180deg,rgba(255,255,255,.5),transparent);filter:blur(.4px);"></div>`
     );
   }
-  // Soft brick = layered cake: sponge side + raised sponge top, a cream filling
-  // band through the middle (奶油/海綿 layering), a cream frosting cap, and a few
-  // chocolate sprinkles (巧克力米) scattered on top.
+  // Soft brick = frosted cake (top-down): sponge side + sponge top, a big cream
+  // frosting cap CENTRED on the top face (~80% coverage to match the roll cake's
+  // swirl footprint — same perspective, so the two brick types sit consistently),
+  // dressed with a few colourful chocolate sprinkles (巧克力米).
   return (
     `<div style="position:absolute;left:${x}px;top:${sideTop}px;width:${w}px;height:${sideH}px;` +
     `border-radius:0 0 12px 12px;background:linear-gradient(180deg,#DCBC82,#C7A569);"></div>` +
     `<div style="position:absolute;left:${x}px;top:${-pop}px;width:${w}px;height:${topH}px;border-radius:12px 12px 0 0;` +
     `background:linear-gradient(180deg,#EFD6A6,#DCBC82);"></div>` +
-    // cream filling band through the middle → a visible cream/sponge layer
-    `<div style="position:absolute;left:${x}px;top:${-pop + 19}px;width:${w}px;height:6px;` +
-    `background:linear-gradient(180deg,#FFF3DC,#F0DBB4);box-shadow:0 1px 0 rgba(150,108,58,.18);"></div>` +
-    // frosting cap
-    `<div style="position:absolute;left:${x}px;top:${-pop}px;width:${w}px;height:17px;border-radius:12px 12px 9px 9px;` +
-    `background:linear-gradient(180deg,#FFF8EC,#FBE9CD);box-shadow:inset 0 2px 2px rgba(255,255,255,.7);"></div>` +
-    // colourful sprinkles (彩色巧克力米) on the frosting
-    sprinkle(8, -pop + 1, 26, '#F2849E') + // strawberry
-    sprinkle(19, -pop + 5, -18, '#7FD1B9') + // mint
-    sprinkle(29, -pop + 1, 42, '#F5C542') + // lemon
-    sprinkle(34, -pop + 7, -34, '#8FA8E8') + // blueberry
-    sprinkle(15, -pop + 8, 8, '#5E3A20') // chocolate
+    // big centred cream frosting — same footprint (w-6 × topH-8, centred) as the
+    // roll-cake swirl so both brick types read at the same angle
+    `<div style="position:absolute;left:${x + 3}px;top:${-pop + 4}px;width:${w - 6}px;height:${topH - 8}px;` +
+    `border-radius:14px;background:linear-gradient(180deg,#FFF8EC,#FBE9CD);` +
+    `box-shadow:inset 0 2px 2px rgba(255,255,255,.7),inset 0 -3px 5px rgba(214,185,136,.4);"></div>` +
+    // colourful sprinkles (彩色巧克力米) spread across the frosting
+    sprinkle(12, -pop + 10, 26, '#F2849E') + // strawberry
+    sprinkle(28, -pop + 9, -18, '#7FD1B9') + // mint
+    sprinkle(18, -pop + 18, 42, '#F5C542') + // lemon
+    sprinkle(31, -pop + 22, -34, '#8FA8E8') + // blueberry
+    sprinkle(14, -pop + 26, 8, '#5E3A20') // chocolate
   );
 }
 
@@ -239,7 +238,6 @@ const shadowHtml =
  */
 export function cakeBombHtml(): string {
   const sponge = `linear-gradient(180deg,${MILK.cakeHi},${MILK.cakeMid} 45%,${MILK.cakeLo})`;
-  const frost = `linear-gradient(180deg,${MILK.frostHi},${MILK.frostLo})`;
   // Sprinkles: tiny tilted candy sticks on the frosting.
   const sprinkle = (x: number, y: number, deg: number, c: string) =>
     `<div style="position:absolute;left:${x}px;top:${y}px;width:6px;height:3px;border-radius:2px;` +
@@ -249,20 +247,25 @@ export function cakeBombHtml(): string {
     // One wrapper carries the cc-bomb pulse so sponge+frosting+sprinkles breathe
     // together (the candle, added later, stays put).
     `<div style="position:absolute;inset:0;transform-origin:50% 86%;animation:cc-bomb 1s ease-in-out infinite;">` +
-      // Sponge body
-      `<div style="position:absolute;left:${CX - 16}px;top:${CY - 1}px;width:32px;height:17px;` +
-      `border-radius:7px 7px 10px 10px;background:${sponge};` +
-      `box-shadow:0 6px 8px rgba(120,64,22,.3),inset 0 -3px 4px rgba(150,90,40,.35);"></div>` +
-      // Cream frosting dome (overhangs the sponge a touch)
-      `<div style="position:absolute;left:${CX - 18}px;top:${CY - 8}px;width:36px;height:13px;` +
-      `border-radius:14px 14px 10px 10px/16px 16px 7px 7px;background:${frost};` +
-      `box-shadow:inset 0 3px 3px rgba(255,255,255,.9),inset 0 -2px 3px rgba(180,130,80,.18);"></div>` +
-      // Frosting top gloss
-      `<div style="position:absolute;left:${CX - 10}px;top:${CY - 6}px;width:14px;height:5px;border-radius:50%;` +
-      `background:rgba(255,255,255,.8);filter:blur(.5px);"></div>` +
-      sprinkle(CX - 12, CY - 2, 25, '#F2849E') +
-      sprinkle(CX - 2, CY - 4, -20, '#7FC8E8') +
-      sprinkle(CX + 7, CY - 1, 40, '#FFD23D') +
+      // Cake side rim — the chocolate cake's thickness; only a thin crescent shows
+      // below the top disc, exactly like the bricks' visible side (top-down look)
+      `<div style="position:absolute;left:${CX - 18}px;top:${CY}px;width:36px;height:18px;border-radius:50%;` +
+      `background:${sponge};box-shadow:inset 0 -2px 3px rgba(0,0,0,.3);"></div>` +
+      // Glossy dark-ganache TOP disc — the dominant top face, viewed top-down so it
+      // sits at the SAME angle as the top-down frosted bricks (keeps the dark truffle
+      // identity that reads apart from the pale bricks)
+      `<div style="position:absolute;left:${CX - 18}px;top:${CY - 12}px;width:36px;height:24px;border-radius:50%;` +
+      `background:radial-gradient(circle at 42% 34%,${MILK.frostHi},${MILK.frostLo});` +
+      `box-shadow:inset 0 3px 4px rgba(255,255,255,.16),inset 0 -4px 6px rgba(0,0,0,.42);"></div>` +
+      // cream frosting ring just inside the edge (chocolate-cake-with-cream cue)
+      `<div style="position:absolute;left:${CX - 16}px;top:${CY - 10}px;width:32px;height:20px;border-radius:50%;` +
+      `box-shadow:inset 0 0 0 1.5px rgba(255,240,214,.4);"></div>` +
+      // top gloss highlight
+      `<div style="position:absolute;left:${CX - 9}px;top:${CY - 9}px;width:16px;height:6px;border-radius:50%;` +
+      `background:rgba(255,255,255,.42);filter:blur(.6px);"></div>` +
+      sprinkle(CX - 11, CY - 4, 25, '#F2849E') +
+      sprinkle(CX - 1, CY - 6, -20, '#7FC8E8') +
+      sprinkle(CX + 8, CY - 2, 40, '#FFD23D') +
     `</div>` +
     // Candle (the fuse) + flame — full height here; the Renderer melts them DOWN
     // as fuseTicks counts down (see setCandleFuse). Outside the pulse wrapper so
