@@ -129,8 +129,43 @@ export function floorHtml(checker: number): string {
  * as a weird shadow band); the side IS the only depth cue. Hard wall = glossy
  * dark-chocolate; soft brick = layered cake (sponge + cream frosting cap).
  */
-export function cubeHtml(kind: 'wall' | 'block'): string {
+export function cubeHtml(kind: 'wall' | 'block' | 'push'): string {
   const pop = kind === 'wall' ? POP_WALL : POP_BLOCK;
+  if (kind === 'push') {
+    // Pushable brick = a wooden X-crate (caramel-biscuit box with a chocolate X
+    // cross-brace): a warm tan — close to the cake soft brick's colour, "差不多" —
+    // but stamped with the diagonal X that marks it as a shovable crate ("有一點
+    // 區別"). Mirrors the yellow X-crates that are the pushable pieces on the map.
+    const x = 2;
+    const w = TW - 4;
+    const topH = TH - 4;
+    const sideTop = -pop + topH;
+    const sideH = pop + 6;
+    const strapLen = Math.round(w * 1.28);
+    const strapW = 6;
+    const cxp = x + w / 2;
+    const cyp = -pop + topH / 2;
+    const strap = (deg: number): string =>
+      `<div style="position:absolute;left:${cxp - strapLen / 2}px;top:${cyp - strapW / 2}px;` +
+      `width:${strapLen}px;height:${strapW}px;border-radius:3px;` +
+      `background:linear-gradient(180deg,#A9703C,#7A4A22);transform:rotate(${deg}deg);` +
+      `box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 1px 1px rgba(80,50,20,.3);"></div>`;
+    return (
+      // side (crate thickness) — caramel, a touch deeper than the cake brick side
+      `<div style="position:absolute;left:${x}px;top:${sideTop}px;width:${w}px;height:${sideH}px;` +
+      `border-radius:0 0 7px 7px;background:linear-gradient(180deg,#C8A465,#A6814A);"></div>` +
+      // crate lid (top face) — warm caramel
+      `<div style="position:absolute;left:${x}px;top:${-pop}px;width:${w}px;height:${topH}px;border-radius:7px;` +
+      `background:linear-gradient(180deg,#E6C485,#CDA961);` +
+      `box-shadow:inset 0 2px 2px rgba(255,255,255,.4),inset 0 -3px 4px rgba(120,80,30,.35);"></div>` +
+      // plank frame (darker wooden border)
+      `<div style="position:absolute;left:${x + 2}px;top:${-pop + 2}px;width:${w - 4}px;height:${topH - 4}px;` +
+      `border-radius:5px;box-shadow:inset 0 0 0 2px rgba(120,78,34,.55);"></div>` +
+      // chocolate X cross-brace (the tell)
+      strap(45) +
+      strap(-45)
+    );
+  }
   const x = 2;
   const w = TW - 4;
   const topH = TH - 4; // flat top surface

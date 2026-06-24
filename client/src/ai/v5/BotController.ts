@@ -56,7 +56,7 @@ import {
   SPARK_TICKS,
   SUDDEN_DEATH_START_TICK,
 } from '../../../../shared/constants';
-import { ActionFlags, Direction, ItemKind, TileKind } from '../../../../shared/types';
+import { ActionFlags, Direction, ItemKind, TileKind, isDestructibleBrick } from '../../../../shared/types';
 import type { BotTuning } from './BotConfig';
 import { botRandFloat, botRandInt } from './BotConfig';
 import {
@@ -803,9 +803,9 @@ export class BotController {
         const tx = x + dx * step;
         const ty = y + dy * step;
         if (!inBounds(tx, ty)) break;
-        const t = state.map[idx(tx, ty)];
+        const t = state.map[idx(tx, ty)]!;
         if (t === TileKind.HARD) break;
-        if (t === TileKind.SOFT) {
+        if (isDestructibleBrick(t)) {
           count += 1;
           break;
         }
@@ -1063,10 +1063,10 @@ export class BotController {
         const tx = x + dx * step;
         const ty = y + dy * step;
         if (!inBounds(tx, ty)) break;
-        const t = state.map[idx(tx, ty)];
+        const t = state.map[idx(tx, ty)]!;
         if (t === TileKind.HARD) break;
         out.add(idx(tx, ty));
-        if (t === TileKind.SOFT) break; // arm stops at the soft brick.
+        if (isDestructibleBrick(t)) break; // arm stops at a soft / pushable brick.
       }
     }
     return out;
@@ -1605,7 +1605,7 @@ export class BotController {
   ): number {
     let softRemaining = 0;
     for (const t of state.map) {
-      if (t === TileKind.SOFT) softRemaining += 1;
+      if (isDestructibleBrick(t)) softRemaining += 1;
     }
     const softFactor = Math.max(
       0,

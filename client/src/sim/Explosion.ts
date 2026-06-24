@@ -24,7 +24,7 @@
  * Items already on the floor are NOT destroyed by melt-flow (M1 decision).
  */
 import { ITEM_DROP_RATE, SPARK_TICKS } from '../../../shared/constants';
-import { type ItemKind, TileKind } from '../../../shared/types';
+import { type ItemKind, TileKind, isDestructibleBrick } from '../../../shared/types';
 import type { BombState } from './Bomb';
 import type { ItemState } from './Item';
 import { type TileGrid, idx, inBounds } from './Map';
@@ -105,11 +105,12 @@ export function processDetonations(
         // Read the tick-start layout: a brick a sibling bomb already cleared this
         // tick still blocks here (and HARD never changes mid-tick anyway).
         if (!inBounds(tx, ty) || startGrid[cell] === TileKind.HARD) break;
-        if (startGrid[cell] === TileKind.SOFT) {
-          // Clear the brick + roll its drop ONCE per tick — the first arm to reach
-          // it. A later arm meeting the same tick-start brick still stops here but
-          // neither re-clears nor re-rolls (grid is already EMPTY there).
-          if (grid[cell] === TileKind.SOFT) {
+        if (isDestructibleBrick(startGrid[cell]!)) {
+          // SOFT or pushable PUSH brick: clear it + roll its drop ONCE per tick —
+          // the first arm to reach it. A later arm meeting the same tick-start
+          // brick still stops here but neither re-clears nor re-rolls (grid is
+          // already EMPTY there).
+          if (isDestructibleBrick(grid[cell]!)) {
             grid[cell] = TileKind.EMPTY;
             // The just-cleared tile gets NO flame cell: it is immediately safe
             // to enter, so a player can rush in and grab a dropped item without

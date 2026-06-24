@@ -26,7 +26,7 @@ import {
   PLAYER_START_SPEED_BONUS,
   TICK_HZ,
 } from '../../../shared/constants';
-import { Direction } from '../../../shared/types';
+import { Direction, TileKind } from '../../../shared/types';
 import { type BombState, bombAt } from './Bomb';
 import {
   type InputFrame,
@@ -34,7 +34,7 @@ import {
   resolveTryOrder,
   updateHeldStack,
 } from './InputBuffer';
-import { type TileGrid, isWalkable } from './Map';
+import { type TileGrid, idx, inBounds, isWalkable } from './Map';
 
 /** Integer sim parameters derived once from FeelParams (see Sim.ts). */
 export interface SimParams {
@@ -248,6 +248,48 @@ export function stepEntity(
   return [posX, posY, false];
 }
 
+/**
+ * Try to push a PUSH brick one tile in direction `dir`. MUTATES `grid` (the
+ * caller's per-tick clone) and returns true on a successful shove. Fires only
+ * when the player is EXACTLY centered on a tile (both axes aligned), the tile
+ * directly ahead is a PUSH brick, and the tile beyond it is open (walkable +
+ * bomb-free). The brick slides one tile; the player does NOT advance this tick.
+ *
+ * This self-throttles: after a push the brick is one tile ahead with a gap, so
+ * the player must walk back up to it (~one tile at move speed) before pushing
+ * again — yielding a one-tile-hop slide at player speed with no cooldown state.
+ *
+ * ponytail: instant one-tile snap, no slide animation and the player stays put;
+ * if a snappier "push-and-step-in" feel is wanted later, advance the player into
+ * the vacated tile here. Determinism: grid mutates in player-array order inside
+ * tick step (1), so a brick player i pushes is visible to player i+1 that tick.
+ */
+function tryPush(
+  grid: TileGrid,
+  bombs: readonly BombState[],
+  posX: number,
+  posY: number,
+  dir: number,
+): boolean {
+  // Require a dead-center stance: both axes at a tile center.
+  if (posX % MILLITILE !== 0 || posY % MILLITILE !== 0) return false;
+  const dx = dirDX(dir);
+  const dy = dirDY(dir);
+  if (dx === 0 && dy === 0) return false;
+  const cx = tileOf(posX);
+  const cy = tileOf(posY);
+  const ax = cx + dx; // tile directly ahead (the brick)
+  const ay = cy + dy;
+  const bx = ax + dx; // tile beyond (where the brick goes)
+  const by = ay + dy;
+  if (!inBounds(ax, ay)) return false;
+  if (grid[idx(ax, ay)] !== TileKind.PUSH) return false;
+  if (!isOpen(grid, bombs, bx, by)) return false;
+  grid[idx(ax, ay)] = TileKind.EMPTY;
+  grid[idx(bx, by)] = TileKind.PUSH;
+  return true;
+}
+
 /** Effective per-tick speed in millitiles for a player. */
 export function playerSpeedMtPerTick(
   moveSpeedMt: number,
@@ -301,6 +343,17 @@ export function stepPlayerMovement(
       if (moved) {
         player.posX = nx;
         player.posY = ny;
+        player.facing = d as Direction;
+        if (d === player.bufferedDir) {
+          player.bufferedDir = 0;
+          player.bufferedTicks = 0;
+        }
+        break;
+      }
+      // Movement blocked in `d`: if a pushable brick is dead ahead and the tile
+      // beyond is open, shove it (mutates `grid`). The player holds position but
+      // faces the push; clear the buffer just like a move so it doesn't replay.
+      if (tryPush(grid, bombs, player.posX, player.posY, d)) {
         player.facing = d as Direction;
         if (d === player.bufferedDir) {
           player.bufferedDir = 0;

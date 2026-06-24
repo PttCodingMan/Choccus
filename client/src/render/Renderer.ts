@@ -595,6 +595,8 @@ function tileInner(kind: number, x: number, y: number): string {
       ? cubeHtml('wall')
       : kind === TileKind.SOFT
         ? cubeHtml('block')
-        : '')
+        : kind === TileKind.PUSH
+          ? cubeHtml('push')
+          : '')
   );
 }

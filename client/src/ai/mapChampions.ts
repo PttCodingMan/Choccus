@@ -22,6 +22,10 @@ export const MAP_CHAMPION: Readonly<Record<MapKind, { version: number; archetype
   Object.freeze({
     classic: { version: 5, archetype: 'zoner' },
     pirate:  { version: 4, archetype: 'zoner' },
+    // village: newest authored map (push-brick). Default to live champion v5:zoner
+    // (the version taught to read PUSH bricks as SOFT for its blast model). Not yet
+    // BT-ranked on this map — revisit once village is benched.
+    village: { version: 5, archetype: 'zoner' },
   });
 export function championFor(map: MapKind): { version: number; archetype: string } {
   return MAP_CHAMPION[map];

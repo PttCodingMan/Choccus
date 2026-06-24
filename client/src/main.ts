@@ -222,11 +222,13 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       : 'Solo — Arrows move · Space drops chocolate';
   };
 
-  // Map kind: ?map=classic|pirate (case-insensitive); anything else → classic.
+  // Map kind: ?map=classic|pirate|village (case-insensitive); else → classic.
   const parseMapKind = (raw: string | null): MapKind => {
     switch (raw?.toLowerCase()) {
       case 'pirate':
         return 'pirate';
+      case 'village':
+        return 'village';
       default:
         return 'classic';
     }
@@ -375,6 +377,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const mapOptions: ReadonlyArray<readonly [MapKind, string]> = [
     ['classic', 'Classic'],
     ['pirate', 'Pirate'],
+    ['village', 'Village'],
   ];
   for (const [value, label] of mapOptions) {
     const opt = document.createElement('option');
