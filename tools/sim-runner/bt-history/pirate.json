@@ -5,324 +5,180 @@
     {
       "a": "v3:farmer",
       "b": "v3:hunter",
-      "winsA": 118.5,
-      "winsB": 1.5,
-      "draws": 1,
-      "games": 120,
+      "winsA": 194,
+      "winsB": 6,
+      "draws": 2,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:farmer",
       "b": "v3:reactive",
-      "winsA": 119,
-      "winsB": 1,
+      "winsA": 196,
+      "winsB": 4,
       "draws": 0,
-      "games": 120,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:farmer",
       "b": "v3:runner",
-      "winsA": 85,
-      "winsB": 35,
-      "draws": 4,
-      "games": 120,
+      "winsA": 141,
+      "winsB": 59,
+      "draws": 6,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:farmer",
       "b": "v3:trapper",
-      "winsA": 57,
-      "winsB": 63,
-      "draws": 22,
-      "games": 120,
+      "winsA": 97.5,
+      "winsB": 102.5,
+      "draws": 27,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:farmer",
       "b": "v3:zoner",
-      "winsA": 58,
-      "winsB": 62,
-      "draws": 14,
-      "games": 120,
+      "winsA": 97,
+      "winsB": 103,
+      "draws": 22,
+      "games": 200,
       "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:farmer",
-      "b": "v4:zoner",
-      "winsA": 50.5,
-      "winsB": 69.5,
-      "draws": 19,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:farmer",
-      "b": "v5:zoner",
-      "winsA": 62,
-      "winsB": 58,
-      "draws": 18,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:hunter",
       "b": "v3:reactive",
-      "winsA": 120,
+      "winsA": 200,
       "winsB": 0,
       "draws": 0,
-      "games": 120,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:hunter",
       "b": "v3:runner",
-      "winsA": 3,
-      "winsB": 117,
+      "winsA": 6,
+      "winsB": 194,
       "draws": 0,
-      "games": 120,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:hunter",
       "b": "v3:trapper",
-      "winsA": 7,
-      "winsB": 113,
+      "winsA": 11,
+      "winsB": 189,
       "draws": 2,
-      "games": 120,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:hunter",
+      "b": "v3:zoner",
+      "winsA": 9,
+      "winsB": 191,
+      "draws": 0,
+      "games": 200,
+      "meta": {
+        "repeats": 100,
+        "seedBase": 305419896
+      }
+    },
+    {
+      "a": "v3:reactive",
+      "b": "v3:runner",
+      "winsA": 2,
+      "winsB": 198,
+      "draws": 0,
+      "games": 200,
+      "meta": {
+        "repeats": 100,
+        "seedBase": 305419896
+      }
+    },
+    {
+      "a": "v3:reactive",
+      "b": "v3:trapper",
+      "winsA": 9.5,
+      "winsB": 190.5,
+      "draws": 1,
+      "games": 200,
+      "meta": {
+        "repeats": 100,
+        "seedBase": 305419896
+      }
+    },
+    {
+      "a": "v3:reactive",
       "b": "v3:zoner",
       "winsA": 6,
-      "winsB": 114,
+      "winsB": 194,
       "draws": 0,
-      "games": 120,
+      "games": 200,
       "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:hunter",
-      "b": "v4:zoner",
-      "winsA": 4,
-      "winsB": 116,
-      "draws": 0,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:hunter",
-      "b": "v5:zoner",
-      "winsA": 5,
-      "winsB": 115,
-      "draws": 0,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:reactive",
-      "b": "v3:runner",
-      "winsA": 2,
-      "winsB": 118,
-      "draws": 0,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:reactive",
-      "b": "v3:trapper",
-      "winsA": 6.5,
-      "winsB": 113.5,
-      "draws": 1,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:reactive",
-      "b": "v3:zoner",
-      "winsA": 4,
-      "winsB": 116,
-      "draws": 0,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:reactive",
-      "b": "v4:zoner",
-      "winsA": 4,
-      "winsB": 116,
-      "draws": 0,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:reactive",
-      "b": "v5:zoner",
-      "winsA": 2,
-      "winsB": 118,
-      "draws": 0,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:runner",
       "b": "v3:trapper",
-      "winsA": 37,
-      "winsB": 83,
-      "draws": 4,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:runner",
-      "b": "v3:zoner",
-      "winsA": 39.5,
-      "winsB": 80.5,
-      "draws": 3,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:runner",
-      "b": "v4:zoner",
-      "winsA": 36,
-      "winsB": 84,
-      "draws": 2,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:runner",
-      "b": "v5:zoner",
-      "winsA": 29.5,
-      "winsB": 90.5,
-      "draws": 1,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:trapper",
-      "b": "v3:zoner",
-      "winsA": 57.5,
-      "winsB": 62.5,
-      "draws": 13,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:trapper",
-      "b": "v4:zoner",
       "winsA": 55.5,
-      "winsB": 64.5,
-      "draws": 19,
-      "games": 120,
+      "winsB": 144.5,
+      "draws": 7,
+      "games": 200,
       "meta": {
-        "repeats": 60,
+        "repeats": 100,
+        "seedBase": 305419896
+      }
+    },
+    {
+      "a": "v3:runner",
+      "b": "v3:zoner",
+      "winsA": 69,
+      "winsB": 131,
+      "draws": 8,
+      "games": 200,
+      "meta": {
+        "repeats": 100,
         "seedBase": 305419896
       }
     },
     {
       "a": "v3:trapper",
-      "b": "v5:zoner",
-      "winsA": 58.5,
-      "winsB": 61.5,
-      "draws": 19,
-      "games": 120,
+      "b": "v3:zoner",
+      "winsA": 102.5,
+      "winsB": 97.5,
+      "draws": 21,
+      "games": 200,
       "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:zoner",
-      "b": "v4:zoner",
-      "winsA": 53.5,
-      "winsB": 66.5,
-      "draws": 13,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
-        "seedBase": 305419896
-      }
-    },
-    {
-      "a": "v3:zoner",
-      "b": "v5:zoner",
-      "winsA": 58,
-      "winsB": 62,
-      "draws": 8,
-      "games": 120,
-      "meta": {
-        "repeats": 60,
+        "repeats": 100,
         "seedBase": 305419896
       }
     }

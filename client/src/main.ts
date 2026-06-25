@@ -129,6 +129,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     if (d !== null) {
       const v = d.toLowerCase().trim();
       if (v === 'easy' || v === 'normal' || v === 'hard') return v;
+      if (v === 'medium') return 'normal'; // player-facing alias for 'normal'.
     }
     return 'champion';
   };
@@ -458,7 +459,7 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const strengthOptions: ReadonlyArray<readonly [BotMode, string]> = [
     ['champion', "Champion (map's best)"],
     ['hard', 'Hard'],
-    ['normal', 'Normal'],
+    ['normal', 'Medium'],
     ['easy', 'Easy'],
   ];
   for (const [value, label] of strengthOptions) {

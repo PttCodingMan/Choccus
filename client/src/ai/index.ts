@@ -16,6 +16,7 @@ import { v2Module } from './v2/module';
 import { v3Module } from './v3/module';
 import { v4Module } from './v4/module';
 import { v5Module } from './v5/module';
+import { v6Module } from './v6/module';
 
 /**
  * Caller-supplied bot configuration, version-agnostic. `strategyRaw` is the raw
@@ -44,6 +45,7 @@ export const AI_VERSIONS: Readonly<Record<number, AiVersionModule>> = Object.fre
   [v3Module.version]: v3Module,
   [v4Module.version]: v4Module,
   [v5Module.version]: v5Module,
+  [v6Module.version]: v6Module,
 });
 
 /** The newest registered AI version (the default for live play and tools). */
