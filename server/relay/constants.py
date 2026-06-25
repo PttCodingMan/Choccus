@@ -46,6 +46,11 @@ MAX_NAME_LEN = 32
 MAX_ROOM_ID_LEN = 24
 #: Max rating-ladder player id length (chars).
 MAX_PLAYER_ID_LEN = 64
+#: Max length of the playerId field before HMAC verification. A signed session
+#: token (see relay/auth.py) is far longer than a bare id, so the field is
+#: pre-capped to this token-sized bound; only the verified/short fallback id is
+#: then capped to MAX_PLAYER_ID_LEN. Bounds HMAC work per join (anti-flood).
+MAX_AUTH_TOKEN_LEN = 1024
 
 # --- Feel parameters (shared/constants.ts defaults) -------------------------
 

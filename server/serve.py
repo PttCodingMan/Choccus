@@ -39,6 +39,8 @@ if str(_HERE) not in sys.path:
 
 from websockets.asyncio.server import serve as ws_serve
 
+import auth_server
+from relay import auth
 from relay.relay_server import RelayServer
 
 try:
@@ -97,7 +99,11 @@ async def _run_relay(host: str, port: int) -> None:
     loop_name = "uvloop" if uvloop is not None else "asyncio"
     # Relay frames are tiny (inputs/hashes + capped strings); 8 KiB is plenty
     # and far below the 1 MiB default, shrinking the per-frame OOM surface.
-    async with ws_serve(relay.handler, host, port, max_size=8 * 1024):
+    # ping_interval (20 s) keeps idle lobby sockets alive behind reverse proxies
+    # that drop inactive WebSockets (Cloudflare ~100s) — no app heartbeat needed.
+    async with ws_serve(
+        relay.handler, host, port, max_size=8 * 1024, ping_interval=20, ping_timeout=20
+    ):
         print(
             f"[choccus] relay server   → ws://{host}:{port}  ({loop_name})",
             flush=True,
@@ -143,6 +149,17 @@ def main() -> None:
     args = parse_args()
 
     _start_static_server(args.static_dir, args.host, args.static_port)
+
+    # OAuth login endpoints (daemon thread) — same process as static + relay so
+    # prod is one command. Reverse-proxy /auth/* here (CHOCCUS_AUTH_PORT, 8770).
+    auth_server.serve_in_thread()
+    configured = [p for p in auth.PROVIDERS if auth.is_configured(p)]
+    print(
+        f"[choccus] auth server     → http://{auth_server.HOST}:{auth_server.PORT}"
+        f"  (providers: {', '.join(configured) or 'NONE'})"
+        + ("  [INSECURE dev auth secret]" if auth.using_insecure_secret() else ""),
+        flush=True,
+    )
 
     print(
         "[choccus] Two players: open the HTTP URL in two browser tabs, "

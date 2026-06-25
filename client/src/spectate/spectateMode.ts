@@ -28,7 +28,7 @@ import { AI_VERSIONS, type BotSpec, type IBotController, LATEST_AI_VERSION } fro
 import { makeFeelParams } from '../config/FeelParams';
 import { Renderer } from '../render/Renderer';
 import { type InputFrame } from '../sim/InputBuffer';
-import { type MapKind, spawnOrderFromSeed } from '../sim/Map';
+import { MAP_KINDS, type MapKind, spawnOrderFromSeed } from '../sim/Map';
 import { resolveOutcome } from '../sim/Outcome';
 import { type SimState, createInitialState, tick } from '../sim/Sim';
 
@@ -129,10 +129,10 @@ function parseLineup(raw: string | null): Contestant[] {
   return tokens.slice(0, 4).map(parseToken);
 }
 
-/** Map kind: ?map=classic|pirate (case-insensitive); anything else → classic. */
+/** Map kind: ?map=<any registered kind> (case-insensitive); else → classic. */
 function parseMapKind(raw: string | null): MapKind {
-  const r = raw?.toLowerCase();
-  return r === 'pirate' ? 'pirate' : r === 'village' ? 'village' : 'classic';
+  const k = (raw ?? '').toLowerCase();
+  return MAP_KINDS.includes(k) ? k : 'classic';
 }
 
 /** Speed multiplier: ?speed=1|2|4|8; anything else → 4. */
@@ -253,14 +253,10 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
   // Map picker.
   const mapPicker = document.createElement('select');
   mapPicker.style.cssText = `${pickerCss}top:8px;`;
-  for (const [value, text] of [
-    ['classic', 'Classic'],
-    ['pirate', 'Pirate'],
-    ['village', 'Village'],
-  ] as const) {
+  for (const value of MAP_KINDS) {
     const opt = document.createElement('option');
     opt.value = value;
-    opt.textContent = text;
+    opt.textContent = value.charAt(0).toUpperCase() + value.slice(1);
     if (value === mapKind) opt.selected = true;
     mapPicker.appendChild(opt);
   }

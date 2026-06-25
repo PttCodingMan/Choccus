@@ -13,3 +13,4 @@ CLAUDE.local.md
 # OS
 .DS_Store
 tools/sim-runner/screen-baseline-*.json
+.idea/

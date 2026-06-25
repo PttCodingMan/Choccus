@@ -28,5 +28,6 @@ export const MAP_CHAMPION: Readonly<Record<MapKind, { version: number; archetype
     village: { version: 6, archetype: 'hunter' },
   });
 export function championFor(map: MapKind): { version: number; archetype: string } {
-  return MAP_CHAMPION[map];
+  // New/unknown maps (added via the editor) reuse the live default champion.
+  return MAP_CHAMPION[map] ?? { version: 6, archetype: 'hunter' };
 }

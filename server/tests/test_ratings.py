@@ -1,7 +1,9 @@
 """RatingStore tests (in-memory SQLite, no relay)."""
 
 from relay.lobby import Lobby
+from relay.protocol import MsgType, decode
 from relay.ratings import DEFAULT_MU, DEFAULT_SIGMA, RatingStore, synthetic_bot_id
+from relay.relay_server import RelayServer
 
 
 def noop(_data: bytes) -> None:
@@ -54,6 +56,45 @@ def test_games_accumulate_across_matches():
     s.apply_match(parts(("a", 0), ("b", 1)), winner_team=0)
     games = s._db.execute("SELECT games FROM ratings WHERE player_id='a'").fetchone()[0]
     assert games == 2
+
+
+def test_top_orders_by_score_excludes_unplayed_and_respects_limit():
+    s = RatingStore()
+    # a beats b twice (a climbs, b drops); c never plays (default rating).
+    s.apply_match(parts(("a", 0), ("b", 1)), winner_team=0)
+    s.apply_match(parts(("a", 0), ("b", 1)), winner_team=0)
+    s.get("c")  # a pure read must NOT create a row
+    rows = s.top(10)
+    ids = [r["playerId"] for r in rows]
+    assert ids == ["a", "b"]  # c excluded (no games), a before b (higher score)
+    assert rows[0]["score"] > rows[1]["score"]
+    assert rows[0]["games"] == 2
+    # limit caps the row count.
+    assert len(s.top(1)) == 1
+
+
+def test_top_includes_bots():
+    s = RatingStore()
+    bot = synthetic_bot_id("hard")
+    s.apply_match(parts(("human", 0), (bot, 1)), winner_team=1)  # bot wins
+    ids = [r["playerId"] for r in s.top(10)]
+    assert bot in ids
+    assert s.top(10)[0]["playerId"] == bot  # the winner tops the board
+
+
+def test_relay_get_leaderboard_dispatch():
+    """GET_LEADERBOARD routes to a LEADERBOARD reply with the top rows."""
+    server = RelayServer(db_path=":memory:")
+    server.store.apply_match(parts(("a", 0), ("b", 1)), winner_team=0)
+    sent: list[bytes] = []
+    conn = type(
+        "C", (), {"room": None, "slot": None, "send": lambda self, d: sent.append(d)}
+    )()
+    server._dispatch(conn, MsgType.GET_LEADERBOARD, {"limit": 5})
+    assert len(sent) == 1
+    type_id, payload = decode(sent[0])
+    assert type_id == MsgType.LEADERBOARD
+    assert payload["entries"][0]["playerId"] == "a"
 
 
 def _started_two_human_room(store):

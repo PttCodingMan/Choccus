@@ -1,0 +1,190 @@
+<!doctype html>
+<!--
+  Choccus map editor — paints the authored ASCII templates in src/sim/Map.ts and
+  writes them back in place via the dev-only /__map endpoint (see vite.config.ts
+  mapEditorPlugin). No File System Access prompt, no copy-paste. Works only while
+  `npm run dev` is running: open http://localhost:5173/map-editor.html. Zero deps.
+  ponytail: dev-server-backed; inert in a production build (endpoint absent).
+-->
+<meta charset="utf-8" />
+<title>Choccus map editor</title>
+<style>
+  :root { --cell: 34px; }
+  body { font: 14px/1.4 system-ui, sans-serif; background: #faf3e0; color: #3a2a1a; margin: 24px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  #bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  button, select { font: inherit; padding: 6px 12px; border: 1px solid #b08a5e; border-radius: 6px;
+                   background: #fff8ec; cursor: pointer; }
+  button:disabled, select:disabled { opacity: .4; cursor: default; }
+  #palette { display: flex; gap: 6px; }
+  .swatch { width: 80px; }
+  .swatch.sel { outline: 3px solid #2a7; outline-offset: 1px; }
+  #grid { display: grid; grid-template-columns: repeat(15, var(--cell)); gap: 1px;
+          background: #b08a5e; padding: 1px; width: max-content; user-select: none; touch-action: none; }
+  .c { width: var(--cell); height: var(--cell); position: relative; }
+  .c[data-k="#"] { background: #5b3a29; }
+  .c[data-k="S"] { background: #c98a5e; }
+  .c[data-k="P"] { background: #d99a3a; }
+  .c[data-k="."] { background: #fbf3df; }
+  .c[data-k="@"] { background: #fbf3df; }
+  .c[data-k="P"]::after { content: ""; position: absolute; inset: 6px;
+      background: linear-gradient(45deg, transparent 44%, #8a5a1a 44% 56%, transparent 56%),
+                  linear-gradient(-45deg, transparent 44%, #8a5a1a 44% 56%, transparent 56%); }
+  .c[data-k="@"]::after { content: "◎"; position: absolute; inset: 0;
+      display: grid; place-items: center; color: #1f9d57; font: 900 20px system-ui; }
+  #spawns { font-weight: 700; }
+  #status { margin-top: 12px; color: #6a5a4a; }
+  code { background: #fff8ec; padding: 1px 4px; border-radius: 3px; }
+</style>
+
+<h1>🍫 Choccus map editor</h1>
+<div id="bar">
+  <select id="pick" disabled></select>
+  <div id="palette"></div>
+  <button id="save" disabled>Save → Map.ts</button>
+  <button id="newmap" disabled>New map…</button>
+  <button id="clear" disabled>Clear all</button>
+  <button id="reload">Reload from disk</button>
+  <span id="spawns"></span>
+</div>
+<div id="grid"></div>
+<div id="status">Loading templates from <code>src/sim/Map.ts</code>…</div>
+
+<script>
+const COLS = 15, ROWS = 13;
+const KINDS = [
+  { k: '#', name: 'HARD' }, { k: 'S', name: 'SOFT' },
+  { k: 'P', name: 'PUSH' }, { k: '.', name: 'EMPTY' },
+  { k: '@', name: 'SPAWN' },
+];
+const $ = s => document.querySelector(s);
+let templates = {}, curName = '', brush = 'S', grid = blank();
+
+function blank() { return Array.from({ length: ROWS }, () => Array(COLS).fill('.')); }
+
+// Spawn points are painted '@' tiles; Map.ts requires exactly 4. Show a live count.
+function spawnCount() { let n = 0; for (const row of grid) for (const c of row) if (c === '@') n++; return n; }
+function updateSpawnHint() {
+  const n = spawnCount();
+  $('#spawns').textContent = `spawns: ${n}/4`;
+  $('#spawns').style.color = n === 4 ? '#1f9d57' : '#b00';
+}
+
+// ---- palette ----
+const pal = $('#palette');
+for (const { k, name } of KINDS) {
+  const b = document.createElement('button');
+  b.className = 'swatch'; b.textContent = `${k} ${name}`; b.dataset.k = k;
+  b.onclick = () => setBrush(k);
+  pal.appendChild(b);
+}
+function setBrush(k) {
+  brush = k;
+  for (const b of pal.children) b.classList.toggle('sel', b.dataset.k === k);
+}
+setBrush('S');
+addEventListener('keydown', e => { const i = +e.key - 1; if (KINDS[i]) setBrush(KINDS[i].k); });
+
+// ---- grid ----
+const gridEl = $('#grid');
+const cells = [];
+let painting = false;
+for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+  const el = document.createElement('div');
+  el.className = 'c';
+  el.dataset.k = '.';
+  el.onpointerdown = e => { e.preventDefault(); painting = true; el.setPointerCapture(e.pointerId); paint(r, c); };
+  el.onpointerenter = () => { if (painting) paint(r, c); };
+  cells.push(el); gridEl.appendChild(el);
+}
+addEventListener('pointerup', () => painting = false);
+function paint(r, c) { grid[r][c] = brush; cells[r * COLS + c].dataset.k = brush; updateSpawnHint(); }
+function render() {
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) cells[r * COLS + c].dataset.k = grid[r][c];
+}
+
+// ---- load templates from the dev endpoint ----
+async function loadAll() {
+  try {
+    const res = await fetch('/__map');
+    if (!res.ok) throw new Error(await res.text());
+    templates = await res.json();
+    const names = Object.keys(templates);
+    if (!names.length) return setStatus('⚠ No *_TEMPLATE arrays found in Map.ts.', true);
+    const pickEl = $('#pick');
+    pickEl.innerHTML = '';
+    for (const n of names) pickEl.add(new Option(n, n));
+    pickEl.disabled = false;
+    pickEl.onchange = () => load(pickEl.value);
+    // Keep the map you're editing selected on reload; only fall back on first load.
+    load(templates[curName] ? curName : (names.find(n => /VILLAGE/.test(n)) || names[0]));
+    $('#save').disabled = false;
+    $('#newmap').disabled = false;
+    $('#clear').disabled = false;
+  } catch (e) {
+    setStatus('⚠ Could not reach /__map — is <code>npm run dev</code> running? ' + e.message, true);
+  }
+}
+
+function load(name) {
+  curName = name;
+  $('#pick').value = name;
+  const rows = templates[name];
+  grid = blank();
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+    grid[r][c] = (rows[r] || '')[c] || '.';
+  render();
+  updateSpawnHint();
+  setStatus(`Editing <code>${name}</code> — ${ROWS}×${COLS}. Paint (◎ = spawn), then Save.`);
+}
+
+// ---- save: POST rows; the dev plugin validates + splices Map.ts ----
+$('#save').onclick = async () => {
+  if (spawnCount() !== 4) return setStatus(`⚠ need exactly 4 spawns (◎); have ${spawnCount()}.`, true);
+  const rows = grid.map(row => row.join(''));
+  try {
+    const res = await fetch('/__map', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: curName, rows }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    templates[curName] = rows;
+    setStatus(`✓ Saved <code>${curName}</code> to Map.ts at ${new Date().toLocaleTimeString()}.`);
+  } catch (e) { setStatus('⚠ save failed: ' + e.message, true); }
+};
+
+// ---- new map: POST { create, rows }; the dev plugin adds a *_TEMPLATE + registry entry ----
+$('#newmap').onclick = async () => {
+  if (spawnCount() !== 4) return setStatus(`⚠ paint exactly 4 spawns (◎) first; have ${spawnCount()}.`, true);
+  const name = (prompt('New map name (letters/digits, e.g. lava):') || '').trim();
+  if (!name) return;
+  const rows = grid.map(row => row.join(''));
+  try {
+    const res = await fetch('/__map', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ create: name, rows }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadAll();
+    load(name.toUpperCase() + '_TEMPLATE');
+    setStatus(`✓ Created '${name.toLowerCase()}' — now editing it; it's playable via ?map=${name.toLowerCase()}.`);
+  } catch (e) { setStatus('⚠ create failed: ' + e.message, true); }
+};
+
+// ---- clear all: blank every tile to EMPTY, keeping the 4 spawns (stays saveable) ----
+$('#clear').onclick = () => {
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r][c] !== '@') grid[r][c] = '.';
+  render();
+  updateSpawnHint();
+  setStatus('Cleared to EMPTY (4 spawns kept). Paint, then Save.');
+};
+
+$('#reload').onclick = loadAll;
+
+function setStatus(html, err) {
+  const s = $('#status'); s.innerHTML = html; s.style.color = err ? '#b00' : '#6a5a4a';
+}
+loadAll();
+</script>

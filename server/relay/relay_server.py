@@ -14,14 +14,16 @@ and silently ignored — the client simply receives no RoomState.
 import asyncio
 import os
 
+from .auth import verify_session
 from .constants import (
     GamePhase,
+    MAX_AUTH_TOKEN_LEN,
     MAX_NAME_LEN,
     MAX_PLAYER_ID_LEN,
     MAX_ROOM_ID_LEN,
 )
 from .lobby import Lobby
-from .protocol import MsgType, decode
+from .protocol import MsgType, decode, leaderboard
 from .ratings import RatingStore
 
 
@@ -97,6 +99,8 @@ class RelayServer:
             self._remove_bot(conn, payload)
         elif type_id == MsgType.MATCH_RESULT:
             self._match_result(conn, payload)
+        elif type_id == MsgType.GET_LEADERBOARD:
+            self._leaderboard(conn, payload)
         elif type_id == MsgType.INPUT_FRAME:
             self._input(conn, payload)
         elif type_id == MsgType.HASH_REPORT:
@@ -110,11 +114,20 @@ class RelayServer:
             return
         room_id = str(payload.get("roomId", ""))[:MAX_ROOM_ID_LEN]
         name = str(payload.get("name", ""))[:MAX_NAME_LEN]
-        # ponytail: playerId is the client-supplied rating-ladder key with NO
-        # auth — a client can claim any id and farm/grief that ladder slot.
-        # Closing this needs a server-issued identity/session system, which is
-        # deliberately deferred (over-engineering for a pure relay). Capped only.
-        player_id = str(payload.get("playerId", ""))[:MAX_PLAYER_ID_LEN]
+        # playerId carries EITHER a signed OAuth session token (see relay/auth.py)
+        # OR, when logged out, a bare anonymous localStorage id. A valid signature
+        # means the embedded pid is an authenticated identity (discord:/google:)
+        # we can trust as the rating key; otherwise we fall back to the raw id,
+        # capped — which a client can still spoof, exactly as before (anonymous,
+        # unverifiable ladder slot). The pre-cap bounds HMAC work per join.
+        raw_id = str(payload.get("playerId", ""))[:MAX_AUTH_TOKEN_LEN]
+        session = verify_session(raw_id)
+        if session is not None:
+            player_id = str(session.get("pid", ""))[:MAX_PLAYER_ID_LEN]
+            if not name:
+                name = str(session.get("name", ""))[:MAX_NAME_LEN]
+        else:
+            player_id = raw_id[:MAX_PLAYER_ID_LEN]
         # '' = create a fresh random-id room; a named id joins the existing
         # room or auto-creates it (lets clients meet at e.g. ?room=test).
         room = (
@@ -199,6 +212,15 @@ class RelayServer:
             _log(f"room {room.room_id}: ratings updated (winner={winner_team})")
             # Push the fresh scores so the post-match lobby shows them.
             room.broadcast_room_state()
+
+    def _leaderboard(self, conn: Connection, payload: dict) -> None:
+        """Global top-N rating board for the lobby (not room-scoped)."""
+        try:
+            limit = int(payload.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(50, limit))  # bound untrusted input
+        conn.send(leaderboard(self.store.top(limit)))
 
     def _input(self, conn: Connection, payload: dict) -> None:
         room, slot = conn.room, conn.slot

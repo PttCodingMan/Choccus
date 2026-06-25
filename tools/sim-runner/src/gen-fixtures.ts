@@ -143,15 +143,11 @@ function searchSeed(
 // ---------------------------------------------------------------------------
 // Prechecks
 // ---------------------------------------------------------------------------
-
-/** Number of SOFT bricks on row 1 strictly between the two top corners. */
-function row1Softs(state: SimState): number {
-  let n = 0;
-  for (let x = 2; x <= MAP_COLS - 3; x++) {
-    if (state.map[idx(x, 1)] === TileKind.SOFT) n += 1;
-  }
-  return n;
-}
+//
+// (The old `row1Softs <= 4` corridor-density precheck is gone: every map kind is
+// now a fixed authored template, so the map no longer varies with the seed — the
+// scripts just clear whatever the (now constant) corridor holds. searchSeed still
+// varies item drops, which is what the scenario validations actually depend on.)
 
 // ---------------------------------------------------------------------------
 // Fixture definitions
@@ -217,12 +213,12 @@ function buildChain(): Built {
   const { seed, result } = searchSeed(
     3000,
     3000,
-    (s0) => row1Softs(s0) <= 4,
+    () => true,
     (seed) => {
       const res = record({
         seed,
         numPlayers: 2,
-        maxTicks: 2600,
+        maxTicks: 5000,
         tail: 60,
         scripts: (ctx) => [
           (function* script(): Script {
@@ -278,13 +274,13 @@ function buildTrapRescue(): Built {
   const { seed, result } = searchSeed(
     5000,
     3000,
-    (s0) => row1Softs(s0) <= 4,
+    () => true,
     (seed) => {
       const res = record({
         seed,
         numPlayers: 3,
         teams: [0, 0, 1],
-        maxTicks: 2600,
+        maxTicks: 5000,
         tail: 60,
         scripts: (ctx) => [
           (function* script(): Script {

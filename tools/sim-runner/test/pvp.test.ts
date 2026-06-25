@@ -166,8 +166,8 @@ describe('determinism: no hash drift when opts omitted', () => {
   });
 
   it('pinned initial hashes (guards against silent hash drift)', () => {
-    expect(createInitialState(12345, fp, 2).stateHash).toBe(2424677573);
-    expect(createInitialState(777, fp, 2).stateHash).toBe(3096868042);
+    expect(createInitialState(12345, fp, 2).stateHash).toBe(915083392);
+    expect(createInitialState(777, fp, 2).stateHash).toBe(174127567);
   });
 
   it('idle tick-hash sequence is self-consistent across runs', () => {

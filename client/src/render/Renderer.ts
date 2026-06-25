@@ -125,6 +125,13 @@ export class Renderer {
   private lastTimer = '';
   private lastBanner = '';
 
+  // Match-intro overlay: a big 3·2·1·GO countdown + a pulsing ring on the local
+  // player's spawn, so players see where they appeared before the action starts.
+  private readonly countdownEl: HTMLDivElement;
+  private lastCountdown = '';
+  private highlightSlot: number | null = null;
+  private spawnRing: HTMLDivElement | null = null;
+
   private constructor(hintText: string) {
     const { w, h } = boardSize(MAP_COLS, MAP_ROWS);
 
@@ -162,6 +169,16 @@ export class Renderer {
         `box-shadow:0 8px 18px rgba(74,42,24,.4),inset 0 2px 0 rgba(255,255,255,.12);` +
         `font-family:'Baloo 2','Nunito',sans-serif;font-weight:800;font-size:26px;` +
         `letter-spacing:.04em;color:#FBE9CF;white-space:nowrap;`,
+      board,
+    );
+
+    // Match-intro countdown overlay (big centred 3·2·1·GO), hidden by default.
+    this.countdownEl = div(
+      `position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1001;` +
+        `display:none;font-family:'Baloo 2','Nunito',sans-serif;font-weight:800;` +
+        `font-size:140px;line-height:1;color:#FFF5E0;` +
+        `text-shadow:0 6px 0 rgba(122,74,43,.45),0 0 24px rgba(255,180,90,.8);` +
+        `pointer-events:none;`,
       board,
     );
 
@@ -212,6 +229,36 @@ export class Renderer {
 
   private isBot(slot: number): boolean {
     return this.botSlots ? this.botSlots.has(slot) : slot !== 0;
+  }
+
+  /** Big centred match-intro countdown ('3'/'2'/'1'/'GO!'); null hides it. */
+  setCountdown(text: string | null): void {
+    const key = text ?? '';
+    if (key === this.lastCountdown) return; // unchanged → no DOM churn / re-pop
+    this.lastCountdown = key;
+    if (text === null) {
+      this.countdownEl.style.display = 'none';
+      return;
+    }
+    this.countdownEl.textContent = text;
+    this.countdownEl.style.display = 'block';
+    // Pop each new value (WAAPI, restarts cleanly on reuse).
+    this.countdownEl.animate(
+      [
+        { transform: 'translate(-50%,-50%) scale(1.5)', opacity: 0 },
+        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: 0.4 },
+        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+      ],
+      { duration: 400, easing: 'ease-out' },
+    );
+  }
+
+  /** Pulse a ring on this slot's spawn cell (the local player), or clear it. */
+  setSpawnHighlight(slot: number | null): void {
+    this.highlightSlot = slot;
+    if (slot === null && this.spawnRing !== null) {
+      this.spawnRing.style.display = 'none';
+    }
   }
 
   render(prev: SimState, next: SimState, alpha: number): void {
@@ -351,6 +398,40 @@ export class Renderer {
     for (const [slot, v] of this.playerPool) {
       if (!seen.has(slot)) v.node.style.display = 'none';
     }
+    this.updateSpawnRing(prev, next, alpha);
+  }
+
+  /** Pulsing ring under the highlighted (local) player during the intro. */
+  private updateSpawnRing(prev: SimState, next: SimState, alpha: number): void {
+    const slot = this.highlightSlot;
+    const pl = slot === null ? undefined : next.players.find((p) => p.slot === slot);
+    if (slot === null || pl === undefined || !pl.alive) {
+      if (this.spawnRing !== null) this.spawnRing.style.display = 'none';
+      return;
+    }
+    if (this.spawnRing === null) {
+      this.spawnRing = div(
+        `position:absolute;left:0;top:0;width:${TW}px;height:${TH}px;` +
+          `border-radius:50%;box-sizing:border-box;` +
+          `border:4px solid #FFD27A;box-shadow:0 0 16px 4px rgba(255,200,90,.7);` +
+          `pointer-events:none;z-index:${rowZ(0, Z.PLAYER)};`,
+      );
+      this.playerLayer.appendChild(this.spawnRing);
+      // Pulse via opacity + glow only — animating `transform` here would clobber
+      // the translate3d that positions the ring on the player's cell.
+      this.spawnRing.animate(
+        [
+          { opacity: 0.5, boxShadow: '0 0 8px 2px rgba(255,200,90,.45)' },
+          { opacity: 1, boxShadow: '0 0 22px 7px rgba(255,200,90,.9)' },
+        ],
+        { duration: 650, direction: 'alternate', iterations: Infinity, easing: 'ease-in-out' },
+      );
+    }
+    const prevPl = prev.players.find((p) => p.slot === slot);
+    const { tx, ty } = tileFrac(prevPl, pl, alpha);
+    this.spawnRing.style.transform = `translate3d(${PAD_X + tx * TW}px,${PAD_TOP + ty * TH}px,0)`;
+    this.spawnRing.style.zIndex = rowZ(Math.round(ty), Z.SHELL);
+    this.spawnRing.style.display = 'block';
   }
 
   // -- Explosions (tile-locked; center = bright ring/core/drops) -------------

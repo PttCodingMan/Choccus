@@ -1,37 +1,57 @@
 /**
  * Tile grid: `Uint8Array(MAP_COLS * MAP_ROWS)` of `TileKind`.
  *
- * Two map kinds share the same grid size and spawn corners:
+ * EVERY map is now a fully authored ASCII template (see `MAP_TEMPLATES`). There
+ * is no procedural / PRNG-rolled kind anymore — `generateMap` draws ZERO PRNG
+ * values for all kinds and returns the incoming PRNG state UNCHANGED, so the map
+ * never perturbs the shared stream. (Historically 'classic' rolled its soft
+ * bricks per-seed; it is now a fixed template so the map editor can paint it.)
  *
- *  - 'classic' (default): HARD = outer ring + every even-(x,y) interior tile;
- *    remaining eligible tiles roll SOFT at `SOFT_BRICK_RATE` (72%).
- *  - 'pirate': a fully authored template (see `PIRATE_TEMPLATE`). Its only HARD
- *    interior features are sparse anchors — the four corner-interior pillars
- *    plus a central horizontal hard bar — every other interior tile is SOFT.
- *    It draws ZERO PRNG values (the layout is fixed, not rolled) and relies on
- *    the spawn-clear override below to open the four spawn corners.
+ * Template chars: `#`=HARD, `S`=SOFT, `P`=PUSH(able crate), `.`=EMPTY,
+ * `@`=SPAWN (an EMPTY tile that is also a player spawn point). Each template MUST
+ * contain exactly 4 `@` tiles — one per slot. Spawn slot order = scan order
+ * (y-major, x-minor); for the standard four corners that yields TL, TR, BL, BR.
  *
- * In all kinds an L-shape of `SPAWN_CLEAR_TILES` (3) is kept clear at each
- * spawn corner.
- *
- * PRNG call order (determinism contract): the rolled kind ('classic') draws one
- * `prngFloat` per eligible tile, iterating y = 0..rows-1 outer, x = 0..cols-1
- * inner; hard and spawn-clear tiles are forced and consume no PRNG. The 'pirate'
- * kind is fully authored and draws ZERO PRNG values, returning the incoming PRNG
- * state UNCHANGED (deterministic and intentional).
+ * Around each `@` an L/plus of tiles is force-cleared to EMPTY (the spawn tile
+ * plus its in-bounds, non-outer-ring orthogonal neighbours), opening the spawn
+ * pocket regardless of what the template painted there. For the four canonical
+ * corners this reproduces the old 3-tile spawn-clear L exactly, so the authored
+ * maps stay byte-identical.
  */
-import {
-  MAP_COLS,
-  MAP_ROWS,
-  SOFT_BRICK_RATE,
-} from '../../../shared/constants';
+import { MAP_COLS, MAP_ROWS } from '../../../shared/constants';
 import { TileKind } from '../../../shared/types';
-import { prngFloat, prngInt } from './Prng';
+import { prngInt } from './Prng';
 
 export type TileGrid = Uint8Array;
 
-/** Map layout variant. Selected per match via opts, never randomly. */
-export type MapKind = 'classic' | 'pirate' | 'village';
+/**
+ * Map layout variant. A free string (not a closed union) so the map editor can
+ * add new authored kinds without a type change — every kind that exists is a key
+ * of `MAP_TEMPLATES`; unknown kinds fall back to classic at generation time.
+ */
+export type MapKind = string;
+
+/**
+ * The authored 'classic' layout: the hard outer ring + the even-(x,y) interior
+ * lattice (`#`), every other interior tile SOFT (`S`), spawns (`@`) at the four
+ * corners. Formerly PRNG-rolled per seed; frozen to a fixed template so it can be
+ * edited like the others (this changed the classic PRNG stream → golden re-pinned).
+ */
+const CLASSIC_TEMPLATE: readonly string[] = [
+  '@.SPSS...SSPS.@',
+  '.#S#S#S#S#S#S#.',
+  'SSSSSSSSSSSSSSS',
+  'P#S#S#S#S#S#S#P',
+  'SSSSSSSSSSSSSSS',
+  '.#S#S#S#S#S#S#.',
+  '..SSSSSSSSSSS..',
+  '.#S#S#S#S#S#S#.',
+  'SSSSSSSSSSSSSSS',
+  'P#S#S#S#S#S#S#P',
+  'SSSSSSSSSSSSSSS',
+  '.#S#S#.#.#S#S#.',
+  '@.SPSS...SSPS.@',
+];
 
 /**
  * The authored 'village' layout (an ORIGINAL design inspired by the openness /
@@ -43,71 +63,58 @@ export type MapKind = 'classic' | 'pirate' | 'village';
  * (see candyArt cubeHtml) and LINE THE ROAD LANES — columns 6 & 8 hug the
  * vertical lane, and a few flank the horizontal lane — mirroring the crate-lined
  * roads of the source map. Every crate sits one tile off an EMPTY lane so it can
- * be shoved into it (see Player.ts tryPush). Like 'pirate' it is fully authored
- * and draws ZERO PRNG values. `#`=HARD, `S`=SOFT, `P`=PUSH, `.`=EMPTY; spawn
- * corners are forced EMPTY by the spawn-clear override regardless of the template.
+ * be shoved into it (see Player.ts tryPush). `@` marks the four corner spawns.
  */
 const VILLAGE_TEMPLATE: readonly string[] = [
-  '###############',
-  '#SSSSSS.SSSSSS#',
-  '#S#SS#S.S#SS#S#',
-  '#SSSSSP.PSSSSS#',
-  '#S#SS#S.S#SS#S#',
-  '#SSPSSP.PSSPSS#',
-  '#.............#',
-  '#SSPSSP.PSSPSS#',
-  '#S#SS#S.S#SS#S#',
-  '#SSSSSP.PSSSSS#',
-  '#S#SS#S.S#SS#S#',
-  '#SSSSSS.SSSSSS#',
-  '###############',
+  '@.SSS...P.#S#@#',
+  '.#PSP#P..#SS...',
+  '..SSSS.PP.#P#P#',
+  'P#P#P#P..#SSSSS',
+  'SSSSSS..P.#P#P#',
+  'S#S#S#PP..SSSSS',
+  '#.#.#...P.#.#.#',
+  'SSSSS.P..#S#S#S',
+  '#P#PS#.PPSSSSSS',
+  '#SSSSSP..#P#P#S',
+  '#S#PS#P.PSSSSS.',
+  '#@SSSS.P.#P#P#.',
+  '######..P.SSS.@',
 ];
 
 /**
  * The authored 'pirate' layout: 13 rows of 15 chars each, row index = y,
- * char index = x. `#` = HARD, `S` = SOFT, `.` = EMPTY. The four spawn corners
- * are forced EMPTY by the spawn-clear override at generation time regardless of
- * what the template says there. Interior HARD anchors: the four corner pillars
- * and a central horizontal hard bar; everything else is SOFT.
+ * char index = x. Interior HARD anchors: the four corner pillars and a central
+ * horizontal hard bar; everything else is SOFT. `@` marks the four corner spawns.
  */
 const PIRATE_TEMPLATE: readonly string[] = [
-  '###############',
-  '#S..SSSSSSS..S#',
-  '#S#.SSSSSSS.#S#',
-  '#SSSSSSSSSSSSS#',
-  '#SSSSSSSSSSSSS#',
-  '#SSSSSSSSSSSSS#',
-  '#SSSSS###SSSSS#',
-  '#SSSSSSSSSSSSS#',
-  '#SSSSSSSSSSSSS#',
-  '#SSSSSSSSSSSSS#',
-  '#S#.SSSSSSS.#S#',
-  '#S..SSSSSSS..S#',
-  '###############',
+  'SSSS.@.S.@.SSSS',
+  'S#S.PPP.PPP.S#S',
+  'SS.P.S.P.S.P.SS',
+  'S.P.SSSSSSS.P.S',
+  'S.PSSSSSSSSSP.S',
+  'S.P.SSSSSSS.P.S',
+  'S.PSSS###SSSP.S',
+  'SS.P.SSSSS.P.SS',
+  'SSS.PSSSSSP.SSS',
+  'SSSS.P.S.P.SSSS',
+  'SS.SS.PPP.SS.SS',
+  'S#.SSS...SSS.#S',
+  'S@.SSSSSSSSS.@S',
 ];
 
-// Validate the authored templates at module load so a typo fails loudly.
-function validateTemplate(name: string, tmpl: readonly string[]): void {
-  if (tmpl.length !== MAP_ROWS) {
-    throw new Error(`${name} must have ${MAP_ROWS} rows, got ${tmpl.length}`);
-  }
-  for (let y = 0; y < tmpl.length; y++) {
-    const row = tmpl[y]!;
-    if (row.length !== MAP_COLS) {
-      throw new Error(`${name} row ${y} must be ${MAP_COLS} chars, got ${row.length}`);
-    }
-  }
-}
-validateTemplate('PIRATE_TEMPLATE', PIRATE_TEMPLATE);
-validateTemplate('VILLAGE_TEMPLATE', VILLAGE_TEMPLATE);
+/**
+ * Registry of every authored map kind. The map editor's dev endpoint splices new
+ * `*_TEMPLATE` consts in and adds a key here; `generateMap`, `mapSpawns`, and the
+ * UI map pickers (`MAP_KINDS`) all read from this single source of truth.
+ */
+const MAP_TEMPLATES: Record<string, readonly string[]> = {
+  classic: CLASSIC_TEMPLATE,
+  pirate: PIRATE_TEMPLATE,
+  village: VILLAGE_TEMPLATE,
+};
 
-/** Map a single template char to its TileKind (`#`/`S`/`P`/`.`). */
-function templateTile(ch: string): TileKind {
-  if (ch === '#') return TileKind.HARD;
-  if (ch === 'S') return TileKind.SOFT;
-  if (ch === 'P') return TileKind.PUSH;
-  return TileKind.EMPTY;
-}
+/** All authored map kinds, in registry order — drives the UI map pickers. */
+export const MAP_KINDS: readonly string[] = Object.keys(MAP_TEMPLATES);
 
 /** Flat index for tile (x, y). Caller guarantees bounds. */
 export function idx(x: number, y: number): number {
@@ -118,7 +125,72 @@ export function inBounds(x: number, y: number): boolean {
   return x >= 0 && x < MAP_COLS && y >= 0 && y < MAP_ROWS;
 }
 
-/** The four spawn corners (inside the hard outer ring), slot order 0..3. */
+/** Map a single template char to its TileKind (`#`/`S`/`P`/`.`/`@`→EMPTY). */
+function templateTile(ch: string): TileKind {
+  if (ch === '#') return TileKind.HARD;
+  if (ch === 'S') return TileKind.SOFT;
+  if (ch === 'P') return TileKind.PUSH;
+  return TileKind.EMPTY; // '.' and '@' (spawn) are walkable EMPTY
+}
+
+/** All `@` spawn tiles in a template, in scan order (y-major) = slot order. */
+function spawnsOf(tmpl: readonly string[]): Array<readonly [number, number]> {
+  const out: Array<readonly [number, number]> = [];
+  for (let y = 0; y < MAP_ROWS; y++) {
+    for (let x = 0; x < MAP_COLS; x++) {
+      if (tmpl[y]![x] === '@') out.push([x, y]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The set of flat indices force-cleared to EMPTY around the spawns: each spawn
+ * tile plus its in-bounds, non-outer-ring orthogonal neighbours. At the four
+ * corners this is the classic 3-tile L (two of the four neighbours are the ring
+ * and are skipped), so the canonical maps are unchanged; for an interior spawn
+ * it is a 5-tile plus.
+ */
+function spawnClearSet(spawns: ReadonlyArray<readonly [number, number]>): Set<number> {
+  const clear = new Set<number>();
+  for (const [sx, sy] of spawns) {
+    clear.add(idx(sx, sy));
+    for (const [nx, ny] of [
+      [sx + 1, sy],
+      [sx - 1, sy],
+      [sx, sy + 1],
+      [sx, sy - 1],
+    ] as const) {
+      // Skip the outer ring (and out-of-bounds): never punch a hole in the wall.
+      if (nx > 0 && nx < MAP_COLS - 1 && ny > 0 && ny < MAP_ROWS - 1) {
+        clear.add(idx(nx, ny));
+      }
+    }
+  }
+  return clear;
+}
+
+/** Validate an authored template at module load so a typo fails loudly. */
+function validateTemplate(name: string, tmpl: readonly string[]): void {
+  if (tmpl.length !== MAP_ROWS) {
+    throw new Error(`${name} must have ${MAP_ROWS} rows, got ${tmpl.length}`);
+  }
+  for (let y = 0; y < tmpl.length; y++) {
+    const row = tmpl[y]!;
+    if (row.length !== MAP_COLS) {
+      throw new Error(`${name} row ${y} must be ${MAP_COLS} chars, got ${row.length}`);
+    }
+  }
+  const spawns = spawnsOf(tmpl);
+  if (spawns.length !== 4) {
+    throw new Error(`${name} must have exactly 4 '@' spawn tiles, got ${spawns.length}`);
+  }
+}
+for (const [kind, tmpl] of Object.entries(MAP_TEMPLATES)) {
+  validateTemplate(`${kind.toUpperCase()}_TEMPLATE`, tmpl);
+}
+
+/** The four canonical spawn corners (inside the hard outer ring), slot order 0..3. */
 export const SPAWN_CORNERS: ReadonlyArray<readonly [number, number]> = [
   [1, 1],
   [MAP_COLS - 2, 1],
@@ -126,18 +198,25 @@ export const SPAWN_CORNERS: ReadonlyArray<readonly [number, number]> = [
   [MAP_COLS - 2, MAP_ROWS - 2],
 ];
 
+/** The spawn points for a map kind, in slot order. Falls back to the four
+ *  corners for an unknown kind or a (malformed) template with no spawns. */
+export function mapSpawns(kind: MapKind): ReadonlyArray<readonly [number, number]> {
+  const spawns = spawnsOf(MAP_TEMPLATES[kind] ?? CLASSIC_TEMPLATE);
+  return spawns.length > 0 ? spawns : SPAWN_CORNERS;
+}
+
 /**
- * A deterministic permutation of the four spawn-corner indices `[0,1,2,3]`,
- * derived purely from `seed` (Fisher-Yates over a Mulberry32 stream). Pure and
+ * A deterministic permutation of the four spawn indices `[0,1,2,3]`, derived
+ * purely from `seed` (Fisher-Yates over a Mulberry32 stream). Pure and
  * decision-free — same seed always yields the same order on every client, so it
  * can be re-derived from the shared match seed in net play with no extra wire
  * data. Pass the result as `createInitialState`'s `spawnOrder` so slot i spawns
- * at corner `order[i]` instead of corner i.
+ * at `mapSpawns(kind)[order[i]]` instead of spawn i.
  *
- * Note: ALL four corner L-zones are always force-cleared at generation time and
- * consume no PRNG (see `isSpawnClear`), so permuting which slot lands on which
- * corner never perturbs map generation. The default (no `spawnOrder`) keeps the
- * identity mapping, so the headless bench/golden path stays byte-identical.
+ * Note: the spawn-clear zones are always force-cleared at generation time and
+ * consume no PRNG, so permuting which slot lands on which spawn never perturbs
+ * map generation. The default (no `spawnOrder`) keeps the identity mapping, so
+ * the headless bench/golden path stays byte-identical.
  */
 export function spawnOrderFromSeed(seed: number): number[] {
   const order = [0, 1, 2, 3];
@@ -153,91 +232,25 @@ export function spawnOrderFromSeed(seed: number): number[] {
   return order;
 }
 
-/** True on the hard outer ring (structural boundary, both map kinds). */
-function isOuterRing(x: number, y: number): boolean {
-  return x === 0 || y === 0 || x === MAP_COLS - 1 || y === MAP_ROWS - 1;
-}
-
 /**
- * True for the classic hard set: outer ring + the even-(x,y) interior lattice.
- * Exported for renderers/tools that assume the default 'classic' layout.
- */
-export function isHardCoord(x: number, y: number): boolean {
-  return isOuterRing(x, y) || (x % 2 === 0 && y % 2 === 0);
-}
-
-/**
- * Per-kind hard predicate: the rolled 'classic' kind keeps the even-(x,y)
- * lattice (outer ring is included by `isHardCoord`).
- */
-function hardForKind(x: number, y: number): boolean {
-  return isHardCoord(x, y);
-}
-
-/**
- * The L-shaped clear zone at each spawn corner: the corner tile plus its
- * horizontal and vertical neighbors toward the map interior (3 tiles).
- */
-function isSpawnClear(x: number, y: number): boolean {
-  for (const [cx, cy] of SPAWN_CORNERS) {
-    const dx = cx === 1 ? 1 : -1;
-    const dy = cy === 1 ? 1 : -1;
-    if (
-      (x === cx && y === cy) ||
-      (x === cx + dx && y === cy) ||
-      (x === cx && y === cy + dy)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Generate the map for the given `kind`. Returns the grid and the advanced
- * PRNG state. With `kind === 'classic'` (default) this is byte-identical to
- * the original generator and draws the same PRNG values in the same order.
+ * Generate the map for the given `kind` from its authored template. Draws ZERO
+ * PRNG values (the incoming state is returned UNCHANGED) — the map never
+ * perturbs the shared stream. Unknown kinds fall back to the classic template.
  */
 export function generateMap(
   prng: number,
   kind: MapKind = 'classic',
 ): [TileGrid, number] {
+  const tmpl = MAP_TEMPLATES[kind] ?? CLASSIC_TEMPLATE;
+  const clear = spawnClearSet(spawnsOf(tmpl));
   const grid = new Uint8Array(MAP_COLS * MAP_ROWS);
-
-  if (kind === 'pirate' || kind === 'village') {
-    // Fully authored layouts: fill from the template, then apply the SAME
-    // spawn-clear override the rolled kinds use (this opens the four spawn
-    // corners). Zero PRNG draws — the incoming state is returned UNCHANGED on
-    // purpose, so these kinds never perturb the shared PRNG stream.
-    const tmpl = kind === 'pirate' ? PIRATE_TEMPLATE : VILLAGE_TEMPLATE;
-    for (let y = 0; y < MAP_ROWS; y++) {
-      for (let x = 0; x < MAP_COLS; x++) {
-        grid[idx(x, y)] = isSpawnClear(x, y)
-          ? TileKind.EMPTY
-          : templateTile(tmpl[y]![x]!);
-      }
-    }
-    return [grid, prng];
-  }
-
-  let p = prng;
   for (let y = 0; y < MAP_ROWS; y++) {
     for (let x = 0; x < MAP_COLS; x++) {
-      if (hardForKind(x, y)) {
-        grid[idx(x, y)] = TileKind.HARD;
-      } else if (isSpawnClear(x, y)) {
-        // Forced EMPTY at the spawn-clear L-zones. This draws no PRNG, so the
-        // classic stream is untouched.
-        grid[idx(x, y)] = TileKind.EMPTY;
-      } else {
-        // Exactly one PRNG draw per eligible tile.
-        let roll: number;
-        [roll, p] = prngFloat(p);
-        grid[idx(x, y)] = roll < SOFT_BRICK_RATE ? TileKind.SOFT : TileKind.EMPTY;
-      }
+      const i = idx(x, y);
+      grid[i] = clear.has(i) ? TileKind.EMPTY : templateTile(tmpl[y]![x]!);
     }
   }
-  return [grid, p];
+  return [grid, prng];
 }
 
 /** Tile-level walkability: in bounds and EMPTY (bombs are checked separately). */

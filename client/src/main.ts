@@ -39,7 +39,7 @@ import { sampleLocalInput } from './input/InputMapper';
 import { runNetMode } from './net/netMode';
 import { Renderer } from './render/Renderer';
 import { type InputFrame, NO_INPUT } from './sim/InputBuffer';
-import { type MapKind, spawnOrderFromSeed } from './sim/Map';
+import { MAP_KINDS, type MapKind, spawnOrderFromSeed } from './sim/Map';
 import { type SimState, createInitialState, tick } from './sim/Sim';
 import { LossRecorder } from './solo/lossRecorder';
 import { runSpectate } from './spectate/spectateMode';
@@ -223,16 +223,10 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       : 'Solo — Arrows move · Space drops chocolate';
   };
 
-  // Map kind: ?map=classic|pirate|village (case-insensitive); else → classic.
+  // Map kind: ?map=<any registered kind> (case-insensitive); else → classic.
   const parseMapKind = (raw: string | null): MapKind => {
-    switch (raw?.toLowerCase()) {
-      case 'pirate':
-        return 'pirate';
-      case 'village':
-        return 'village';
-      default:
-        return 'classic';
-    }
+    const k = (raw ?? '').toLowerCase();
+    return MAP_KINDS.includes(k) ? k : 'classic';
   };
   let mapKind: MapKind = parseMapKind(params.get('map'));
 
@@ -375,11 +369,9 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     'position:fixed;top:8px;left:8px;z-index:900;padding:6px 12px;' +
     'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
     "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
-  const mapOptions: ReadonlyArray<readonly [MapKind, string]> = [
-    ['classic', 'Classic'],
-    ['pirate', 'Pirate'],
-    ['village', 'Village'],
-  ];
+  const mapOptions: ReadonlyArray<readonly [MapKind, string]> = MAP_KINDS.map(
+    (k) => [k, k.charAt(0).toUpperCase() + k.slice(1)] as const,
+  );
   for (const [value, label] of mapOptions) {
     const opt = document.createElement('option');
     opt.value = value;
