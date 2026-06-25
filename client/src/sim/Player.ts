@@ -24,6 +24,7 @@ import {
   PLAYER_START_CANNON,
   PLAYER_START_FIRE,
   PLAYER_START_SPEED_BONUS,
+  PUSH_CHARGE_TICKS,
   TICK_HZ,
 } from '../../../shared/constants';
 import { Direction, TileKind } from '../../../shared/types';
@@ -84,6 +85,10 @@ export interface PlayerState {
   /** Buffered (latest-pressed) direction retried while bufferedTicks > 0. */
   bufferedDir: number;
   bufferedTicks: number;
+  /** Crate-push charge: ticks spent leaning into the crate in pushChargeDir
+   * (0 when not charging). At PUSH_CHARGE_TICKS the crate slides and this resets. */
+  pushChargeDir: number;
+  pushChargeTicks: number;
 }
 
 export function createPlayer(
@@ -110,6 +115,8 @@ export function createPlayer(
     prevAction: 0,
     bufferedDir: 0,
     bufferedTicks: 0,
+    pushChargeDir: 0,
+    pushChargeTicks: 0,
   };
 }
 
@@ -264,7 +271,13 @@ export function stepEntity(
  * the vacated tile here. Determinism: grid mutates in player-array order inside
  * tick step (1), so a brick player i pushes is visible to player i+1 that tick.
  */
-function tryPush(
+/**
+ * Whether a PUSH brick directly ahead in `dir` could be shoved one tile (player
+ * dead-centered, brick ahead, tile beyond open). Does NOT mutate — the actual
+ * shove is gated behind a charge (see stepPlayerMovement) so heavy crates need
+ * sustained force. `applyPush` performs the move once the charge is full.
+ */
+function canPush(
   grid: TileGrid,
   bombs: readonly BombState[],
   posX: number,
@@ -284,10 +297,18 @@ function tryPush(
   const by = ay + dy;
   if (!inBounds(ax, ay)) return false;
   if (grid[idx(ax, ay)] !== TileKind.PUSH) return false;
-  if (!isOpen(grid, bombs, bx, by)) return false;
+  return isOpen(grid, bombs, bx, by);
+}
+
+/** Slide the PUSH brick ahead in `dir` one tile over. Caller must have confirmed
+ * `canPush` this tick. MUTATES `grid`. */
+function applyPush(grid: TileGrid, posX: number, posY: number, dir: number): void {
+  const dx = dirDX(dir);
+  const dy = dirDY(dir);
+  const ax = tileOf(posX) + dx;
+  const ay = tileOf(posY) + dy;
   grid[idx(ax, ay)] = TileKind.EMPTY;
-  grid[idx(bx, by)] = TileKind.PUSH;
-  return true;
+  grid[idx(ax + dx, ay + dy)] = TileKind.PUSH;
 }
 
 /** Effective per-tick speed in millitiles for a player. */
@@ -324,6 +345,7 @@ export function stepPlayerMovement(
   }
   player.prevDir = input.dir;
 
+  let charging = false; // did we lean into a crate this tick (keep the charge)?
   if (player.alive && !player.trapped) {
     const speed = playerSpeedMtPerTick(params.moveSpeedMt, player.speedBonusTenths);
     for (const d of resolveTryOrder(
@@ -351,10 +373,21 @@ export function stepPlayerMovement(
         break;
       }
       // Movement blocked in `d`: if a pushable brick is dead ahead and the tile
-      // beyond is open, shove it (mutates `grid`). The player holds position but
+      // beyond is open, lean into it. The crate is heavy — it only slides after
+      // the player charges PUSH_CHARGE_TICKS consecutive ticks in this direction;
+      // turning or releasing resets the charge. The player holds position but
       // faces the push; clear the buffer just like a move so it doesn't replay.
-      if (tryPush(grid, bombs, player.posX, player.posY, d)) {
+      if (canPush(grid, bombs, player.posX, player.posY, d)) {
         player.facing = d as Direction;
+        charging = true;
+        player.pushChargeTicks =
+          player.pushChargeDir === d ? player.pushChargeTicks + 1 : 1;
+        player.pushChargeDir = d;
+        if (player.pushChargeTicks >= PUSH_CHARGE_TICKS) {
+          applyPush(grid, player.posX, player.posY, d);
+          player.pushChargeTicks = 0;
+          player.pushChargeDir = 0;
+        }
         if (d === player.bufferedDir) {
           player.bufferedDir = 0;
           player.bufferedTicks = 0;
@@ -362,6 +395,10 @@ export function stepPlayerMovement(
         break;
       }
     }
+  }
+  if (!charging) {
+    player.pushChargeDir = 0;
+    player.pushChargeTicks = 0;
   }
 
   if (player.bufferedTicks > 0) {

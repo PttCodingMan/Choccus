@@ -144,6 +144,7 @@ Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（
 | 對局時間上限 | **3.0 分鐘**（180 秒 = 10800 ticks；打滿仍多隊存活 → sim 強制結束，依「最多存活人數 → 道具發育數」判勝，全平手算平手） |
 | Sudden death（突然死亡） | **120 秒（7200 ticks）起**，每 18 ticks 由**真正最外圈**（row/col 0；authored 地圖鋪滿整張 15×13、無永久牆框）往內螺旋把一格變硬磚、踩在上面者**直接淘汰**（凝固包死、不可救）；~178 秒收滿全場（全 195 格）→ 比賽不可能拖到上限還多隊存活。消滅 farm-to-timeout（`sim/SuddenDeath.ts`，純整數決定性、不抽亂數） |
 | 對齊滑行 | 速度與移動速度共用（轉角輔助沿垂直軸全速滑入） |
+| 推箱蓄力 | **0.5 秒（30 ticks）**：頂著可推箱（`P`）同方向蓄力滿才滑一格；放開或轉向即歸零（箱子重）。常數 `PUSH_CHARGE_TICKS`，邏輯在 `sim/Player.ts` `canPush`/`applyPush` |
 
 ### 玩家初始值與上限
 

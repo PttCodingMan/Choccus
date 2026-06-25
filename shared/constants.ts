@@ -45,6 +45,14 @@ export const FUSE_TICKS = Math.round(3.0 * TICK_HZ); // 180
  */
 export const SPARK_TICKS = Math.round(0.45 * TICK_HZ); // 27
 
+/**
+ * Pushable crate "heave": a player must lean into a crate (hold the direction
+ * while dead-centered against it) for this many consecutive ticks before it
+ * slides one tile. Releasing or turning resets the charge — crates are heavy.
+ */
+// ponytail: feel knob. 0.5 s. Lower for lighter crates.
+export const PUSH_CHARGE_TICKS = Math.round(0.5 * TICK_HZ); // 30
+
 // ---------------------------------------------------------------------------
 // Items
 // ---------------------------------------------------------------------------

@@ -63,7 +63,7 @@ const CLASSIC_TEMPLATE: readonly string[] = [
  * (see candyArt cubeHtml) and LINE THE ROAD LANES — columns 6 & 8 hug the
  * vertical lane, and a few flank the horizontal lane — mirroring the crate-lined
  * roads of the source map. Every crate sits one tile off an EMPTY lane so it can
- * be shoved into it (see Player.ts tryPush). `@` marks the four corner spawns.
+ * be shoved into it (see Player.ts canPush). `@` marks the four corner spawns.
  */
 const VILLAGE_TEMPLATE: readonly string[] = [
   '@.SSS...P.#S#@#',
