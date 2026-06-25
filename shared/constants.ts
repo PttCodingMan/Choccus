@@ -104,21 +104,23 @@ export const HIT_COVER_DEN = 3;
 // ---------------------------------------------------------------------------
 
 /**
- * From this tick on, the play area closes in: one interior tile hardens to a
- * HARD brick every SUDDEN_DEATH_TILE_INTERVAL ticks in an inward spiral (outer
- * ring of the interior first, center last). An alive player caught on a
- * hardening tile is crushed — eliminated outright, no shell/rescue (a fully
- * solidified tile entombs). This kills the farm-to-timeout stall: equal-speed
- * evasion no longer works once there is nowhere left to flee.
+ * From this tick on, the play area closes in: one tile hardens to a HARD brick
+ * every SUDDEN_DEATH_TILE_INTERVAL ticks in an inward spiral starting from the
+ * TRUE outermost ring (row/col 0 and the far edge — the authored maps fill the
+ * whole 15×13 grid, there is no permanent wall border), shrinking to the center.
+ * An alive player caught on a hardening tile is crushed — eliminated outright,
+ * no shell/rescue (a fully solidified tile entombs). This kills the
+ * farm-to-timeout stall: equal-speed evasion no longer works once there is
+ * nowhere left to flee.
  *
- * Tuning: the 13×11 = 143 interior tiles finish hardening at
- * START + 143*INTERVAL = 7200 + 3575 = 10775 (~179.6 s), just under the cap, so
- * a match cannot reach MATCH_MAX_TICKS with two players still standing. Both are
+ * Tuning: the full 15×13 = 195 grid tiles finish hardening at
+ * START + 194*INTERVAL = 7200 + 3492 = 10692 (~178 s), just under the cap, so a
+ * match cannot reach MATCH_MAX_TICKS with two players still standing. Both are
  * pure balance knobs (no determinism impact beyond the grid they harden).
  */
 // ponytail: START is "後段" (last third). Lower it for more pressure time.
 export const SUDDEN_DEATH_START_TICK = 7200; // 120 s
-export const SUDDEN_DEATH_TILE_INTERVAL = 25; // ticks per hardened tile
+export const SUDDEN_DEATH_TILE_INTERVAL = 18; // ticks per hardened tile
 
 // ---------------------------------------------------------------------------
 // Player initial values & caps

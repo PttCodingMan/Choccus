@@ -1,7 +1,9 @@
 /**
- * Sudden-death encroachment: the spiral covers the whole interior exactly once,
- * the board is fully closed by the cap (so a match can't farm-stall to timeout),
- * and a player caught on a hardening tile is crushed (eliminated, not trapped).
+ * Sudden-death encroachment: the spiral covers the whole grid exactly once
+ * (starting from the true outermost ring — the authored maps fill the grid, no
+ * permanent wall border), the board is fully closed by the cap (so a match can't
+ * farm-stall to timeout), and a player caught on a hardening tile is crushed
+ * (eliminated, not trapped).
  */
 import { describe, expect, it } from 'vitest';
 
@@ -21,17 +23,19 @@ import {
 } from '../../../client/src/sim/SuddenDeath';
 
 describe('sudden death', () => {
-  it('spiral covers every interior tile exactly once', () => {
+  it('spiral covers every grid tile exactly once, starting at the outer corner', () => {
     const seen = new Set<number>();
     for (const [x, y] of SPIRAL_ORDER) {
-      expect(x).toBeGreaterThanOrEqual(1);
-      expect(x).toBeLessThanOrEqual(MAP_COLS - 2);
-      expect(y).toBeGreaterThanOrEqual(1);
-      expect(y).toBeLessThanOrEqual(MAP_ROWS - 2);
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThanOrEqual(MAP_COLS - 1);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThanOrEqual(MAP_ROWS - 1);
       seen.add(idx(x, y));
     }
-    expect(SPIRAL_ORDER.length).toBe((MAP_COLS - 2) * (MAP_ROWS - 2));
+    expect(SPIRAL_ORDER.length).toBe(MAP_COLS * MAP_ROWS);
     expect(seen.size).toBe(SPIRAL_ORDER.length);
+    // First tile hardened is the true outermost corner, not one ring in.
+    expect(SPIRAL_ORDER[0]).toEqual([0, 0]);
   });
 
   it('hardens nothing before the start, then the whole board by the cap', () => {

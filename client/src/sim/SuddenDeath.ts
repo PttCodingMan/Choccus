@@ -6,9 +6,9 @@
  * lockstep with zero PRNG draws. The hardened tiles ARE part of the (hashed)
  * grid; the spiral order is a compile-time constant of the map dimensions.
  *
- * Mechanic: from SUDDEN_DEATH_START_TICK, one interior tile per
- * SUDDEN_DEATH_TILE_INTERVAL ticks turns HARD, walking an inward spiral (the
- * interior's outer ring first, the center last). An alive player standing on a
+ * Mechanic: from SUDDEN_DEATH_START_TICK, one tile per
+ * SUDDEN_DEATH_TILE_INTERVAL ticks turns HARD, walking an inward spiral from the
+ * grid's true outermost ring (row/col 0) to the center. An alive player standing on a
  * tile the instant it hardens is crushed — eliminated outright (a fully
  * solidified tile entombs; this is NOT a melt-flow sugar shell, so there is no
  * rescue or timeout window). The encroaching wall is just HARD bricks, so
@@ -26,18 +26,20 @@ import { type TileGrid, idx } from './Map';
 import { type PlayerState, tileOf } from './Player';
 
 /**
- * Inward-spiral order of the interior tiles (x in 1..COLS-2, y in 1..ROWS-2):
- * the interior's outer ring first (clockwise from top-left), shrinking to the
- * center. Built once; a pure function of the map dimensions.
+ * Inward-spiral order over the WHOLE grid (x in 0..COLS-1, y in 0..ROWS-1): the
+ * true outermost ring first (clockwise from the top-left corner), shrinking to
+ * the center. The authored maps fill the entire grid — there is no permanent
+ * hard-wall border — so the shrink must start at row/col 0, not one ring in.
+ * Built once; a pure function of the map dimensions.
  */
 export const SPIRAL_ORDER: ReadonlyArray<readonly [number, number]> = buildSpiral();
 
 function buildSpiral(): Array<[number, number]> {
   const order: Array<[number, number]> = [];
-  let top = 1;
-  let bottom = MAP_ROWS - 2;
-  let left = 1;
-  let right = MAP_COLS - 2;
+  let top = 0;
+  let bottom = MAP_ROWS - 1;
+  let left = 0;
+  let right = MAP_COLS - 1;
   while (top <= bottom && left <= right) {
     for (let x = left; x <= right; x++) order.push([x, top]);
     top++;
