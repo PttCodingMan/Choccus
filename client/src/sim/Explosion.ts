@@ -23,7 +23,13 @@
  *
  * Items already on the floor are NOT destroyed by melt-flow (M1 decision).
  */
-import { ITEM_DROP_RATE, SPARK_TICKS } from '../../../shared/constants';
+import {
+  HIT_COVER_DEN,
+  HIT_COVER_NUM,
+  ITEM_DROP_RATE,
+  MILLITILE,
+  SPARK_TICKS,
+} from '../../../shared/constants';
 import { type ItemKind, TileKind, isDestructibleBrick } from '../../../shared/types';
 import type { BombState } from './Bomb';
 import type { ItemState } from './Item';
@@ -166,4 +172,39 @@ export function explosionAt(
     if (c.tileX === tx && c.tileY === ty) return true;
   }
   return false;
+}
+
+/**
+ * True when the player's 1-tile body box is ≥ HIT_COVER_NUM/HIT_COVER_DEN
+ * covered by flame cells — the BnB-style lenient hitbox (you must be mostly
+ * inside the melt-flow to be trapped, not merely past the tile boundary).
+ *
+ * The body is the unit box centred on (posX, posY); it overlaps the nearest
+ * tile plus, on each axis it is off-centre, the one neighbour it straddles into
+ * (≤4 tiles). Coverage is the exact integer overlap area in millitiles² summed
+ * over the flame tiles among those — no float, no sqrt, fully deterministic. At
+ * a tile centre every off-tile overlap is 0, so this reduces to "own tile on
+ * fire", agreeing with the AI's tile-granular danger model.
+ */
+export function explosionCovers(
+  cells: readonly ExplosionState[],
+  posX: number,
+  posY: number,
+): boolean {
+  const tx = Math.round(posX / MILLITILE);
+  const ty = Math.round(posY / MILLITILE);
+  const ox = posX - tx * MILLITILE; // body-centre offset, [-MILLITILE/2, +MILLITILE/2]
+  const oy = posY - ty * MILLITILE;
+  const sx = ox >= 0 ? 1 : -1; // the neighbour tile the body straddles into
+  const sy = oy >= 0 ? 1 : -1;
+  let area = 0; // covered area, millitiles²
+  for (const nx of [0, sx]) {
+    const ovx = MILLITILE - Math.abs(ox - nx * MILLITILE); // overlap width with column tx+nx
+    if (ovx <= 0) continue; // aligned axis: neighbour column contributes nothing
+    for (const ny of [0, sy]) {
+      const ovy = MILLITILE - Math.abs(oy - ny * MILLITILE);
+      if (ovy > 0 && explosionAt(cells, tx + nx, ty + ny)) area += ovx * ovy;
+    }
+  }
+  return area * HIT_COVER_DEN >= HIT_COVER_NUM * MILLITILE * MILLITILE;
 }

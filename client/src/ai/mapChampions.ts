@@ -1,31 +1,31 @@
 import type { MapKind } from '../sim/Map';
-/** Per-map champion = the strongest bot on that map, used as the DEFAULT solo
- *  bot. v5:zoner = the v4 Zoner backbone plus a DEFENSIVE escape-redundancy axis
- *  (anti-entrapment penalty + robust refuge selection) countering follow-up
- *  "seal" bombs.
+/** Per-map champion = the live default bot, used in solo / spectate / net backfill.
+ *  ALL maps = v6:hunter (the AGGRESSIVE archetype) as of 2026-06-25.
  *
- *  - classic: v5:zoner, still clearly #1 (beats v4 55.6% head-to-head; v5-probe).
- *  - pirate:  v4:zoner. The 2026-06-22 chain-leak fix (Explosion.ts: a blast no
- *    longer flows through a brick a co-detonating bomb cleared the same tick)
- *    rebaselined the brick-dense pirate map. v5's pirate edge over v4 regressed
- *    from 55.0% to 47.9% (v5-probe, 240 duels) — a near-tie with v4 marginally
- *    ahead — so the eval-strongest main-trunk strategy on pirate is now v4:zoner.
- *    (v5 still beats v3:trapper there, 54.4%.) The Bradley-Terry ladder was
- *    re-seeded on the post-fix sim (2026-06-23): on the v3-pool ladder v5
- *    nominally edges v4 by ~10 Elo on pirate, but that v4↔v5 gap is BT-IMPUTED
- *    (the pair is never played directly) and the direct v5-probe CRN has v4
- *    ahead — so pirate stays v4:zoner. Gate on direct CRN, not imputed Elo.
+ *  v6:hunter = the v6 Zoner defensive backbone (stacked escape-redundancy:
+ *  entrapWeight 20 + the new foe-independent shrinkEntrapWeight) PLUS a VERY
+ *  aggressive front — aggression 1.5 / bombChance 0.9 / combatRange 7 and two
+ *  pressure traits: `digToFoeWeight` (炸光周遭: strip the nearest foe's surrounding
+ *  bricks into open space) and `sealPredictWeight` (擊殺預判: anticipate the foe's
+ *  advancing vChain counter-seal and reach open ground first, so it can press
+ *  without being sealed). The player should face a relentless attacker.
  *
- *  See tools/sim-runner v5-probe + docs/ai-versions.md §九. Update if a future
+ *  Why hunter is the live default (per the user's call — aggressive playstyle):
+ *  under the BnB lenient hitbox (HIT_COVER 2/3, merged 2026-06-25) aggression is
+ *  no longer self-defeating — survivable edge-dodging means pressing the foe stops
+ *  feeding its seal. Direct CRN vs the prior champion v5:zoner (v5-probe, 240 duels
+ *  each, lenient hitbox): classic 57.7%, pirate 51.0% — beats v5 on BOTH maps while
+ *  being far more aggressive than the defensive v6:zoner. Decomposition: the lenient
+ *  hitbox un-breaks aggression (hunter-alone already 52%+); seal-prediction adds a
+ *  small protective bump; the aggression crank (1.4→1.5) lifts classic further.
+ *
+ *  See tools/sim-runner v5-probe + docs/ai-versions.md §十一. Update if a future
  *  tuning pass changes the direct-CRN top row. */
 export const MAP_CHAMPION: Readonly<Record<MapKind, { version: number; archetype: string }>> =
   Object.freeze({
-    classic: { version: 5, archetype: 'zoner' },
-    pirate:  { version: 4, archetype: 'zoner' },
-    // village: newest authored map (push-brick). Default to live champion v5:zoner
-    // (the version taught to read PUSH bricks as SOFT for its blast model). Not yet
-    // BT-ranked on this map — revisit once village is benched.
-    village: { version: 5, archetype: 'zoner' },
+    classic: { version: 6, archetype: 'hunter' },
+    pirate:  { version: 6, archetype: 'hunter' },
+    village: { version: 6, archetype: 'hunter' },
   });
 export function championFor(map: MapKind): { version: number; archetype: string } {
   return MAP_CHAMPION[map];

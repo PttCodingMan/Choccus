@@ -80,6 +80,26 @@ export const RESPAWN_PROTECT_TICKS = Math.round(4.0 * TICK_HZ); // 240
 export const MATCH_MAX_TICKS = Math.round(180 * TICK_HZ); // 10800
 
 // ---------------------------------------------------------------------------
+// Hit model — BnB-style lenient hitbox (半身閃 / 卡縫躲爆)
+// ---------------------------------------------------------------------------
+
+/**
+ * Flame coverage needed to trap a player, as a fraction HIT_COVER_NUM/_DEN of
+ * the 1-tile body box. BnB lets you shave a flame edge: you die only when ≥2/3
+ * of your body is inside the melt-flow, not the instant your centre crosses the
+ * tile boundary (the implicit ~1/2 of the old whole-tile test). Raise the
+ * numerator for a stricter hitbox, lower it for a more forgiving one; set
+ * NUM==DEN (3/3) to recover the exact whole-tile model. Coverage is computed as
+ * exact integer area in millitiles² (see explosionCovers), so this stays
+ * deterministic. At a tile centre it reduces to "own tile on fire", matching the
+ * AI danger map. Ported from df83062 (feat/online-bots-and-ratings) onto the
+ * current sim line (v4/v5/v6 + sudden-death + caps 7/6); golden re-pinned and BT
+ * yardstick re-seeded on THIS sim (not df83062's stale snapshot).
+ */
+export const HIT_COVER_NUM = 2;
+export const HIT_COVER_DEN = 3;
+
+// ---------------------------------------------------------------------------
 // Sudden death — late-match arena shrink that forces a result before the cap
 // ---------------------------------------------------------------------------
 

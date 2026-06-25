@@ -36,6 +36,7 @@ import { type BombState, bombPressedEdge, tryPlaceBomb } from './Bomb';
 import {
   type ExplosionState,
   explosionAt,
+  explosionCovers,
   processDetonations,
 } from './Explosion';
 import { hashSimState } from './Hash';
@@ -210,11 +211,7 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
   // (4) explosion-cell hits: trap players.
   if (explosions.length > 0) {
     for (const pl of players) {
-      if (
-        pl.alive &&
-        !pl.trapped &&
-        explosionAt(explosions, tileOf(pl.posX), tileOf(pl.posY))
-      ) {
+      if (pl.alive && !pl.trapped && explosionCovers(explosions, pl.posX, pl.posY)) {
         trapPlayer(pl);
       }
     }
