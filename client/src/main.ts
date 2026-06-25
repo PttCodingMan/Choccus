@@ -57,6 +57,16 @@ const randomSeed = (): number => Math.floor(Math.random() * 0x1_0000_0000) >>> 0
 /** Clamp big frame gaps (tab switch, breakpoint) to avoid a spiral of death. */
 const MAX_FRAME_MS = 250;
 
+/**
+ * Hard cap on sim ticks advanced per rAF frame. Each tick samples every bot
+ * (v6 = depth-4 forward search), so an unbounded catch-up loop turns one slow
+ * frame (GC hitch, clustered bot decisions, backgrounded tab) into a burst of
+ * heavy ticks that blocks paint — felt as movement lag. Capping the burst keeps
+ * each frame short; solo isn't lockstep, so dropping the small leftover backlog
+ * is invisible (the sim runs a hair behind real time, never freezes).
+ */
+const MAX_TICKS_PER_FRAME = 3;
+
 async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   // Bot count: default 1 when ?bots is absent; clamped to 0..3 otherwise.
   // Mutable so the bot-count picker can change it; reset() then rebuilds the
@@ -497,7 +507,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     last = now;
     acc += dt;
 
-    while (acc >= TICK_MS) {
+    let steps = 0;
+    while (acc >= TICK_MS && steps < MAX_TICKS_PER_FRAME) {
       const inputs: InputFrame[] = [sampleLocalInput(keyboard)];
       for (let slot = 1; slot <= effectiveBots(); slot++) {
         const c = botControllers[slot - 1];
@@ -509,7 +520,11 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       lossRecorder.tick(prevTick.tick, inputs, prevTick, cur);
       matchSound.tick(prevTick, cur);
       acc -= TICK_MS;
+      steps += 1;
     }
+    // Hit the per-frame tick cap → drop the leftover backlog so it can't snowball
+    // into an even longer next frame (see MAX_TICKS_PER_FRAME).
+    if (acc >= TICK_MS) acc = 0;
 
     // Auto-restart: once the match is OVER (last team standing), schedule a
     // fresh random match after ~2.5s. Fires once per match; reset() clears the

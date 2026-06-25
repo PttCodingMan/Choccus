@@ -247,7 +247,7 @@ export function cakeBombHtml(): string {
     shadowHtml +
     // One wrapper carries the cc-bomb pulse so sponge+frosting+sprinkles breathe
     // together (the candle, added later, stays put).
-    `<div style="position:absolute;inset:0;transform-origin:50% 86%;animation:cc-bomb 1s ease-in-out infinite;">` +
+    `<div style="position:absolute;inset:0;transform-origin:50% 86%;">` +
       // Cake side rim — the chocolate cake's thickness; only a thin crescent shows
       // below the top disc, exactly like the bricks' visible side (top-down look)
       `<div style="position:absolute;left:${CX - 18}px;top:${CY}px;width:36px;height:18px;border-radius:50%;` +
@@ -277,7 +277,7 @@ export function cakeBombHtml(): string {
     `<div class="cc-flame-el" style="position:absolute;left:${CX - 3}px;top:-9px;width:7px;height:11px;` +
     `border-radius:50% 50% 45% 45%/65% 65% 35% 35%;transform-origin:50% 100%;` +
     `background:radial-gradient(circle at 50% 70%,#FFF6C8,${MILK.spark} 45%,${MILK.sparkGlow});` +
-    `box-shadow:0 0 3px 1px ${MILK.sparkGlow};animation:cc-flame .35s ease-in-out infinite;"></div>`
+    `box-shadow:0 0 3px 1px ${MILK.sparkGlow};"></div>`
   );
 }
 

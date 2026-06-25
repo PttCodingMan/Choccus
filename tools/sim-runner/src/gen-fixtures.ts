@@ -13,11 +13,10 @@
  */
 import { writeFileSync } from 'node:fs';
 
-import { MAP_COLS, TRAPPED_TICKS } from '../../../shared/constants';
-import { GamePhase, TileKind } from '../../../shared/types';
+import { TRAPPED_TICKS } from '../../../shared/constants';
+import { GamePhase } from '../../../shared/types';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
 import { NO_INPUT, type InputFrame } from '../../../client/src/sim/InputBuffer';
-import { idx } from '../../../client/src/sim/Map';
 import {
   type SimState,
   createInitialState,
