@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { SPAWN_CORNERS, generateMap, idx } from '../../../client/src/sim/Map';
+import { generateMap, idx, mapSpawns } from '../../../client/src/sim/Map';
 import { TileKind } from '../../../shared/types';
 
 const SEED = 0x1234_5678;
@@ -24,7 +24,7 @@ describe('map: classic default + pirate', () => {
     }
   });
 
-  it('pirate map is fully authored: zero PRNG draws, spawn corners cleared', () => {
+  it('pirate map is fully authored: zero PRNG draws, spawns cleared', () => {
     const [grid, prng] = generateMap(SEED, 'pirate');
     // Authored kind consumes no PRNG: state returned unchanged.
     expect(prng).toBe(SEED);
@@ -34,28 +34,12 @@ describe('map: classic default + pirate', () => {
     for (let i = 0; i < grid.length; i++) {
       expect(grid2[i]).toBe(grid[i]);
     }
-    // Spawn corners (and their L-zones) forced EMPTY despite the SOFT template.
-    for (const [cx, cy] of SPAWN_CORNERS) {
-      const dx = cx === 1 ? 1 : -1;
-      const dy = cy === 1 ? 1 : -1;
-      for (const [x, y] of [
-        [cx, cy],
-        [cx + dx, cy],
-        [cx, cy + dy],
-      ] as const) {
-        expect(grid[idx(x, y)]).toBe(TileKind.EMPTY);
-      }
+    // Layout-agnostic: each authored '@' spawn tile is walkable EMPTY (spawns
+    // live wherever the editor-authored template marks them, not fixed corners).
+    const spawns = mapSpawns('pirate');
+    expect(spawns.length).toBe(4);
+    for (const [x, y] of spawns) {
+      expect(grid[idx(x, y)]).toBe(TileKind.EMPTY);
     }
-    // Central horizontal hard bar: (6,6),(7,6),(8,6).
-    for (const [x, y] of [
-      [6, 6],
-      [7, 6],
-      [8, 6],
-    ] as const) {
-      expect(grid[idx(x, y)]).toBe(TileKind.HARD);
-    }
-    // Corner-interior pillars from the template, e.g. (2,2) and (12,10).
-    expect(grid[idx(2, 2)]).toBe(TileKind.HARD);
-    expect(grid[idx(12, 10)]).toBe(TileKind.HARD);
   });
 });

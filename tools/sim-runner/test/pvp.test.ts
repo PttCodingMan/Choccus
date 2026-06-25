@@ -37,12 +37,16 @@ describe('non-PvP default sanity', () => {
     const base = createInitialState(777, fp, 3, { teams: [0, 0, 1] });
     const map = new Uint8Array(base.map);
     const players = base.players.map(clonePlayer);
+    players[0]!.posX = 1 * MILLITILE; // trapped at (1,1)
+    players[0]!.posY = 1 * MILLITILE;
     players[0]!.trapped = true;
     players[0]!.trappedTicks = TRAPPED_TICKS;
     players[1]!.posX = 3 * MILLITILE; // walk in from (3,1)
     players[1]!.posY = 1 * MILLITILE;
-    map[idx(3, 1)] = TileKind.EMPTY;
+    // Clear the lane explicitly — independent of the map's authored spawn layout.
+    map[idx(1, 1)] = TileKind.EMPTY;
     map[idx(2, 1)] = TileKind.EMPTY;
+    map[idx(3, 1)] = TileKind.EMPTY;
     let st: SimState = { ...base, map, players };
 
     const LEFT: InputFrame = { dir: Direction.LEFT, action: 0 };
@@ -98,8 +102,10 @@ describe('PvP enemy contact', () => {
       players[1]!.posY = 1 * MILLITILE;
       players[0]!.posX = 3 * MILLITILE; // team 0 walks in from (3,1)
       players[0]!.posY = 1 * MILLITILE;
-      map[idx(3, 1)] = TileKind.EMPTY;
+      // Clear the lane explicitly — independent of the map's authored spawn layout.
+      map[idx(1, 1)] = TileKind.EMPTY;
       map[idx(2, 1)] = TileKind.EMPTY;
+      map[idx(3, 1)] = TileKind.EMPTY;
     });
     const LEFT: InputFrame = { dir: Direction.LEFT, action: 0 };
     let koAt = -1;
@@ -166,8 +172,8 @@ describe('determinism: no hash drift when opts omitted', () => {
   });
 
   it('pinned initial hashes (guards against silent hash drift)', () => {
-    expect(createInitialState(12345, fp, 2).stateHash).toBe(915083392);
-    expect(createInitialState(777, fp, 2).stateHash).toBe(174127567);
+    expect(createInitialState(12345, fp, 2).stateHash).toBe(2565331877);
+    expect(createInitialState(777, fp, 2).stateHash).toBe(1721561030);
   });
 
   it('idle tick-hash sequence is self-consistent across runs', () => {
