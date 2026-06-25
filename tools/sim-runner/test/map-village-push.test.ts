@@ -10,15 +10,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { MAP_COLS, MAP_ROWS, MILLITILE } from '../../../shared/constants';
-import { Direction, TileKind } from '../../../shared/types';
+import { Direction, ItemKind, TileKind } from '../../../shared/types';
 import { SPAWN_CORNERS, generateMap, idx } from '../../../client/src/sim/Map';
 import {
   type SimParams,
+  clonePlayer,
   createPlayer,
   stepPlayerMovement,
   tileOf,
 } from '../../../client/src/sim/Player';
 import { processDetonations } from '../../../client/src/sim/Explosion';
+import { type SimState, createInitialState, tick } from '../../../client/src/sim/Sim';
+import { makeFeelParams } from '../../../client/src/config/FeelParams';
+import { NO_INPUT } from '../../../client/src/sim/InputBuffer';
 import type { BombState } from '../../../client/src/sim/Bomb';
 import type { InputFrame } from '../../../client/src/sim/InputBuffer';
 
@@ -130,6 +134,36 @@ describe('push mechanic', () => {
     expect(grid[idx(px + 1, py)]).toBe(TileKind.PUSH); // brick unmoved
     expect(grid[idx(px + 2, py)]).toBe(TileKind.HARD);
     expect(player.posX).toBe(px * MILLITILE); // player blocked, stays put
+  });
+
+  it('shoving a crate onto a floor item deletes the item (the crate takes its place)', () => {
+    const base = createInitialState(0, makeFeelParams(), 2, { pvp: true, teams: [0, 1] });
+    const map = new Uint8Array(base.map);
+    const players = base.players.map(clonePlayer);
+    const px = 1;
+    const py = 1;
+    // Clean lane: player at (1,1), crate at (2,1), item lying on (3,1).
+    map[idx(px, py)] = TileKind.EMPTY;
+    map[idx(px + 1, py)] = TileKind.PUSH;
+    map[idx(px + 2, py)] = TileKind.EMPTY;
+    players[0]!.posX = px * MILLITILE;
+    players[0]!.posY = py * MILLITILE;
+    // Park the second player out of the way.
+    players[1]!.posX = 13 * MILLITILE;
+    players[1]!.posY = 11 * MILLITILE;
+    const st0: SimState = {
+      ...base,
+      map,
+      players,
+      items: [{ tileX: px + 2, tileY: py, kind: ItemKind.FIRE }],
+    };
+    expect(st0.items.some((it) => it.tileX === px + 2)).toBe(true);
+
+    const right: InputFrame = { dir: Direction.RIGHT, action: 0 };
+    const st1 = tick(st0, [right, NO_INPUT]);
+
+    expect(st1.map[idx(px + 2, py)]).toBe(TileKind.PUSH); // crate slid onto item tile
+    expect(st1.items.length).toBe(0); // …and the item is gone
   });
 
   it('a blast destroys a PUSH brick exactly like SOFT (arm stops, tile cleared)', () => {
