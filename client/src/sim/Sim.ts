@@ -25,7 +25,7 @@
  * `createInitialState` draws: map generation ONLY (no per-entity spawn draws).
  */
 import { MATCH_MAX_TICKS } from '../../../shared/constants';
-import { GamePhase } from '../../../shared/types';
+import { GamePhase, TileKind } from '../../../shared/types';
 import {
   type FeelParams,
   cornerAssistMt,
@@ -42,7 +42,7 @@ import {
 import { hashSimState } from './Hash';
 import { type InputFrame, NO_INPUT } from './InputBuffer';
 import { type ItemState, applyItem } from './Item';
-import { type MapKind, SPAWN_CORNERS, type TileGrid, generateMap } from './Map';
+import { type MapKind, type TileGrid, generateMap, idx, mapSpawns } from './Map';
 import {
   type PlayerState,
   type SimParams,
@@ -122,12 +122,13 @@ export function createInitialState(
     pvp,
   });
 
-  const n = Math.max(1, Math.min(numPlayers, SPAWN_CORNERS.length));
+  const spawns = mapSpawns(mapKind);
+  const n = Math.max(1, Math.min(numPlayers, spawns.length));
   const players: PlayerState[] = [];
   for (let i = 0; i < n; i++) {
-    // Default identity (corner i); a caller-supplied spawnOrder permutes which
-    // pre-cleared corner this slot occupies. No PRNG drawn here either way.
-    const corner = SPAWN_CORNERS[opts?.spawnOrder?.[i] ?? i];
+    // Default identity (spawn i); a caller-supplied spawnOrder permutes which
+    // pre-cleared spawn this slot occupies. No PRNG drawn here either way.
+    const corner = spawns[opts?.spawnOrder?.[i] ?? i];
     // team is a whole-match constant; NOT hashed (see PlayerState in Player.ts).
     // Default team = slot (each player on its own team unless opts.teams given).
     if (corner !== undefined) {
@@ -175,6 +176,12 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
     const pl = players[i];
     if (pl === undefined) continue;
     stepPlayerMovement(grid, bombs, pl, inputs[i] ?? NO_INPUT, state.params);
+  }
+  // A push can shove a crate onto a floor item (items only ever sit on EMPTY
+  // tiles, so item-tile==PUSH ⟺ a crate was just pushed onto it this tick).
+  // The item is gone — the crate took its place.
+  if (items.length > 0) {
+    items = items.filter((it) => grid[idx(it.tileX, it.tileY)] !== TileKind.PUSH);
   }
 
   // (2) bomb placement on action rising edge.

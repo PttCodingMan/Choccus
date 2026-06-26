@@ -7,9 +7,13 @@ dist/
 __pycache__/
 *.pyc
 
+# Server runtime data (generated; not source)
+*.db
+
 # Machine-local Claude instructions (remote nodes, ssh aliases, private paths)
 CLAUDE.local.md
 
 # OS
 .DS_Store
 tools/sim-runner/screen-baseline-*.json
+.idea/

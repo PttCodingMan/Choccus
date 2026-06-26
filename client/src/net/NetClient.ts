@@ -17,6 +17,7 @@
 import {
   MsgType,
   buildAddBot,
+  buildGetLeaderboard,
   buildHashReport,
   buildInputFrame,
   buildJoinRoom,
@@ -30,6 +31,7 @@ import type { ServerMsg } from './protocolCodec';
 import type {
   HashMismatchMsg,
   InputBroadcastMsg,
+  LeaderboardMsg,
   MatchStartMsg,
   PlayerDisconnectMsg,
   RoomStateMsg,
@@ -46,6 +48,7 @@ export interface NetClientEvents {
   stallNotice: StallNoticeMsg;
   hashMismatch: HashMismatchMsg;
   playerDisconnect: PlayerDisconnectMsg;
+  leaderboard: LeaderboardMsg;
   /** Any decoded server message (catch-all, fired in addition to the above). */
   message: ServerMsg;
   close: { code: number; reason: string };
@@ -252,6 +255,10 @@ export class NetClient {
     this.send(buildRemoveBot(slot));
   }
 
+  requestLeaderboard(limit: number = 10): void {
+    this.send(buildGetLeaderboard(limit));
+  }
+
   sendInput(t: number, dirs: number, actions: number): void {
     this.send(buildInputFrame(t, dirs, actions));
   }
@@ -304,6 +311,9 @@ export class NetClient {
         break;
       case MsgType.PLAYER_DISCONNECT:
         this.emit('playerDisconnect', msg);
+        break;
+      case MsgType.LEADERBOARD:
+        this.emit('leaderboard', msg);
         break;
     }
   }

@@ -17,7 +17,7 @@ export const TileKind = {
   SOFT: 2,
   /**
    * Pushable brick (village map): a SOFT-equivalent destructible brick that a
-   * player can shove one tile (see Player.ts tryPush). For EVERY blast model —
+   * player can shove one tile (see Player.ts canPush). For EVERY blast model —
    * the sim's Explosion.ts AND the AI's danger raycasts — it behaves IDENTICALLY
    * to SOFT (the arm stops at it, destroys it, may drop an item). The only
    * difference from SOFT is that movement can push it. Use `isDestructibleBrick`

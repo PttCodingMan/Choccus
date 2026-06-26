@@ -28,15 +28,45 @@
 import { KeyboardInput } from '../input/KeyboardInput';
 import { Renderer } from '../render/Renderer';
 import { LobbyUI } from './LobbyUI';
+import { LocalRoom } from './LocalRoom';
 import { MatchRunner } from './MatchRunner';
 import { NetClient } from './NetClient';
 import { NetDebugOverlay } from './NetDebugOverlay';
 import { NetLobby } from './NetLobby';
+import { asTier, botForTier } from '../ai/botDifficulty';
+import { captureSessionFromUrl, getAuth, login, logout, oauthEnabled, ratingKey } from './auth';
 import { recordBotResult, suggestedTier } from './dda';
-import { getPlayerId } from './identity';
 import { resolveWsUrl } from './wsUrl';
 import type { LockstepStatus } from './LockstepEngine';
-import type { MatchStartMsg, RoomPlayer, RoomStateMsg } from './protocolCodec';
+import type {
+  LeaderboardEntry,
+  MatchStartMsg,
+  RoomPlayer,
+  RoomStateMsg,
+} from './protocolCodec';
+
+/** Resolve a leaderboard row's display label: humans show their name; a bot id
+ *  (`bot:<tier>`) becomes its friendly archetype name (champion table is the
+ *  same on every map, so 'classic' is a fine representative). */
+function leaderboardRow(e: LeaderboardEntry): {
+  label: string;
+  score: number;
+  games: number;
+  isBot: boolean;
+} {
+  if (e.playerId.startsWith('bot:')) {
+    const tier = asTier(e.playerId.slice(4));
+    const { version, archetype } = botForTier(tier, 'classic');
+    const tierName = tier.charAt(0).toUpperCase() + tier.slice(1);
+    return {
+      label: `🤖 v${version}-${archetype} · ${tierName}`,
+      score: e.score,
+      games: e.games,
+      isBot: true,
+    };
+  }
+  return { label: e.name || 'Player', score: e.score, games: e.games, isBot: false };
+}
 
 /** autoready waits for this roster size before readying up. */
 const AUTOREADY_MIN_PLAYERS = 2;
@@ -44,13 +74,19 @@ const AUTOREADY_MIN_PLAYERS = 2;
 type Screen = 'landing' | 'room' | 'match' | 'result' | 'disconnected';
 
 export async function runNetMode(params: URLSearchParams): Promise<void> {
+  // Capture a fresh ?session= token (post-login redirect) before anything reads
+  // the identity, then strip it from the URL.
+  captureSessionFromUrl();
+
   const url = resolveWsUrl(params);
   const roomParam = params.get('room') ?? '';
   const nameParam = params.get('name') ?? '';
   const autoReady = params.get('autoready') === '1';
   const debug = autoReady || params.get('debug') === '1';
+  // Name precedence: explicit ?name= → logged-in provider name → random guest.
   const name =
     nameParam ||
+    getAuth()?.name ||
     `Player${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 
   const mount = document.getElementById('app');
@@ -61,13 +97,15 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
   const client = new NetClient();
   client.enableAutoReconnect();
   const lobby = new NetLobby(client);
-  lobby.playerId = getPlayerId(); // persistent rating key, sent with every join
+  lobby.playerId = ratingKey(); // signed session token when logged in, else anon id
   const keyboard = new KeyboardInput(); // attached only while a match runs
 
   const ui = new LobbyUI();
   mount.appendChild(ui.root);
   ui.setName(name);
   ui.setRoomId(roomParam);
+  ui.setLoginEnabled(oauthEnabled()); // OAuth UI is off until VITE_OAUTH_ENABLED=1
+  ui.setAuthName(getAuth()?.name ?? null);
   // Invite link deliberately omits `name` so the friend picks their own.
   ui.buildInviteUrl = (roomId) => {
     const u = new URL(window.location.href);
@@ -103,6 +141,9 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
   let screen: Screen = 'landing';
   let renderer: Renderer | null = null;
   let runner: MatchRunner | null = null;
+  /** Active offline room (alone-vs-bots, no relay); null = relay path. While
+   *  set, the room callbacks below dispatch here instead of to the relay. */
+  let localRoom: LocalRoom | null = null;
   /** Roster snapshot at MatchStart — names disconnect notices by slot. */
   let rosterAtStart: RoomPlayer[] = [];
   let everConnected = false;
@@ -257,6 +298,17 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     }
   };
 
+  // Lobby leaderboard: the relay replies to GET_LEADERBOARD with the global
+  // top-N. Render on arrival; a best-effort connect fetches it on the landing
+  // screen, and it hides itself when the relay is unreachable (offline deploy).
+  client.on('leaderboard', (m) => ui.setLeaderboard(m.entries.map(leaderboardRow)));
+  const refreshLeaderboard = (): void => {
+    void ensureConnected().then(
+      () => client.requestLeaderboard(10),
+      () => ui.setLeaderboard(null),
+    );
+  };
+
   const joinFlow = async (playerName: string, roomId: string): Promise<void> => {
     ui.setLandingStatus('Connecting…');
     try {
@@ -274,15 +326,29 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
   ui.onCreateRoom = (n) => void joinFlow(n, '');
   ui.onJoinRoom = (n, roomId) => void joinFlow(n, roomId);
   ui.onQuickMatch = (n) => void joinFlow(n, 'test');
-  ui.onReadyToggle = (ready) => lobby.setReady(ready);
-  ui.onAddBot = (slot, difficulty) => lobby.addBot(slot, difficulty);
-  ui.onRemoveBot = (slot) => lobby.removeBot(slot);
+  // Room callbacks dispatch to the offline LocalRoom while one is active, else
+  // to the relay lobby — the room view (LobbyUI) is the same for both.
+  ui.onReadyToggle = (ready) =>
+    localRoom !== null ? void localRoom.start() : lobby.setReady(ready);
+  ui.onAddBot = (slot, difficulty) =>
+    localRoom !== null ? localRoom.addBot(slot, difficulty) : lobby.addBot(slot, difficulty);
+  ui.onRemoveBot = (slot) =>
+    localRoom !== null ? localRoom.removeBot(slot) : lobby.removeBot(slot);
+  // Host settings exist only on the offline room (relay rooms hide the row).
+  ui.onSelectMap = (map) => localRoom?.setMap(map);
+  ui.onSelectFormat = (format) => localRoom?.setFormat(format);
+  ui.onSelectColor = (color) => localRoom?.setColor(color);
   ui.setSuggestedTier(suggestedTier()); // seed the "+ Bot" picker from local DDA
   ui.onLeaveRoom = () => {
+    if (localRoom !== null) {
+      localRoom.leave(); // disposes + calls onExitToLanding below
+      return;
+    }
     lobby.leave();
     screen = 'landing';
     ui.showLanding();
     ui.setRoomId(lastRoomId);
+    refreshLeaderboard(); // ratings may have changed since we last looked
   };
   ui.onRematch = () => {
     // The relay resets the room to LOBBY on this toggle (rematch signal).
@@ -296,16 +362,33 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     if (lobby.roomState !== null) ui.showRoom(lobby.roomState);
   };
   ui.onSolo = () => {
-    // Offline practice: reload into the single-player route (no WS).
-    const u = new URL(window.location.href);
-    u.search = '?mode=solo';
-    window.location.assign(u.toString());
+    // Open an offline room (alone-vs-bots, no relay) in-place — no page reload.
+    localRoom = new LocalRoom({
+      mount,
+      ui,
+      name: getAuth()?.name ?? ui.getName(),
+      onExitToLanding: () => {
+        localRoom = null;
+        screen = 'landing';
+        ui.showLanding();
+        refreshLeaderboard();
+      },
+    });
+    screen = 'room';
+    localRoom.open();
   };
   ui.onGuide = () => {
     // Navigate to the illustrated how-to-play guide page.
     const u = new URL(window.location.href);
     u.search = '?mode=guide';
     window.location.assign(u.toString());
+  };
+  ui.onLogin = (provider) => login(provider); // navigates to the OAuth flow
+  ui.onLogout = () => {
+    logout();
+    ui.setAuthName(null);
+    lobby.playerId = ratingKey(); // revert to the anonymous id
+    ui.setLandingStatus('已登出');
   };
   ui.onReconnect = () => {
     void (async () => {
@@ -385,5 +468,6 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
   } else {
     screen = 'landing';
     ui.showLanding();
+    refreshLeaderboard();
   }
 }

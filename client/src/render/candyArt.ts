@@ -187,7 +187,7 @@ export function cubeHtml(kind: 'wall' | 'block' | 'push'): string {
       `box-shadow:inset 0 0 0 1px rgba(0,0,0,.26),inset 0 2px 2px rgba(255,255,255,.16),inset 0 -3px 4px rgba(0,0,0,.28);"></div>` +
       // tempered sheen streak across the segment top
       `<div style="position:absolute;left:${x + 3}px;top:${-pop + 4}px;width:${w - 6}px;height:7px;border-radius:7px;` +
-      `background:linear-gradient(180deg,rgba(255,255,255,.5),transparent);filter:blur(.4px);"></div>`
+      `background:linear-gradient(180deg,rgba(255,255,255,.5),transparent);"></div>`
     );
   }
   // Soft brick = frosted cake (top-down): sponge side + sponge top, a big cream
@@ -247,7 +247,7 @@ export function cakeBombHtml(): string {
     shadowHtml +
     // One wrapper carries the cc-bomb pulse so sponge+frosting+sprinkles breathe
     // together (the candle, added later, stays put).
-    `<div style="position:absolute;inset:0;transform-origin:50% 86%;animation:cc-bomb 1s ease-in-out infinite;">` +
+    `<div style="position:absolute;inset:0;transform-origin:50% 86%;">` +
       // Cake side rim — the chocolate cake's thickness; only a thin crescent shows
       // below the top disc, exactly like the bricks' visible side (top-down look)
       `<div style="position:absolute;left:${CX - 18}px;top:${CY}px;width:36px;height:18px;border-radius:50%;` +
@@ -263,7 +263,7 @@ export function cakeBombHtml(): string {
       `box-shadow:inset 0 0 0 1.5px rgba(255,240,214,.4);"></div>` +
       // top gloss highlight
       `<div style="position:absolute;left:${CX - 9}px;top:${CY - 9}px;width:16px;height:6px;border-radius:50%;` +
-      `background:rgba(255,255,255,.42);filter:blur(.6px);"></div>` +
+      `background:rgba(255,255,255,.42);"></div>` +
       sprinkle(CX - 11, CY - 4, 25, '#F2849E') +
       sprinkle(CX - 1, CY - 6, -20, '#7FC8E8') +
       sprinkle(CX + 8, CY - 2, 40, '#FFD23D') +
@@ -277,7 +277,7 @@ export function cakeBombHtml(): string {
     `<div class="cc-flame-el" style="position:absolute;left:${CX - 3}px;top:-9px;width:7px;height:11px;` +
     `border-radius:50% 50% 45% 45%/65% 65% 35% 35%;transform-origin:50% 100%;` +
     `background:radial-gradient(circle at 50% 70%,#FFF6C8,${MILK.spark} 45%,${MILK.sparkGlow});` +
-    `box-shadow:0 0 8px 3px ${MILK.sparkGlow};animation:cc-flame .35s ease-in-out infinite;"></div>`
+    `box-shadow:0 0 3px 1px ${MILK.sparkGlow};"></div>`
   );
 }
 
@@ -326,7 +326,7 @@ export function itemHtml(kind: number): string {
       `background:linear-gradient(157deg,#FFFFFF,#F3E7D0 70%,#E9D8B8);` +
       `box-shadow:0 0 0 1.4px rgba(120,78,40,.5),inset 0 -3px 4px rgba(180,140,90,.28),inset 0 3px 3px rgba(255,255,255,.95);"></div>` +
       `<div style="position:absolute;left:${CX - 4}px;top:${CY - 6}px;width:5px;height:7px;border-radius:50%;` +
-      `background:rgba(255,255,255,.85);filter:blur(.4px);"></div>`;
+      `background:rgba(255,255,255,.85);"></div>`;
   } else if (kind === ItemKind.SPEED) {
     // wings = an OPENED heart (per request): the heart split into two half-heart
     // wings spread apart with a central gap, each tilted outward from a shared
@@ -366,7 +366,7 @@ export function itemHtml(kind: number): string {
         `filter:drop-shadow(0 0 .8px rgba(150,110,70,.55));"></div>` +
         // plastic sheen
         `<div style="position:absolute;left:8px;top:5px;width:2.4px;height:10px;border-radius:2px;` +
-        `background:rgba(255,255,255,.7);filter:blur(.3px);"></div>` +
+        `background:rgba(255,255,255,.7);"></div>` +
       `</div>`;
   }
   return base + icon;
@@ -448,7 +448,7 @@ export function explosionHtml(mask: number): string {
       `border-radius:13px;background:${cream};"></div>` +
       // soft top gloss so the squared crest still reads as cream
       `<div style="position:absolute;left:${ex - 8}px;top:${ey - 9}px;width:14px;height:7px;border-radius:5px;` +
-      `background:rgba(255,255,255,.8);filter:blur(.5px);"></div>`;
+      `background:rgba(255,255,255,.8);"></div>`;
     // 浪花: white foam flecks flung off the crest's outer edge — sea-spray at the
     // wave head. Outward axis = the flow; spread sideways; farther = smaller/fainter.
     const fux = ox; // outward unit (lone cell → spray upward)
@@ -483,8 +483,8 @@ export function explosionHtml(mask: number): string {
     h +=
       // molten-chocolate core (the cake's melting centre)
       `<div style="position:absolute;left:${CX - 10}px;top:${CY - 10}px;width:20px;height:20px;border-radius:50%;` +
-      `background:radial-gradient(circle at 38% 32%,#7A4E29,#4A2C16 70%);box-shadow:0 0 9px 3px rgba(120,64,22,.5);"></div>` +
-      `<div style="position:absolute;left:${CX - 4}px;top:${CY - 6}px;width:6px;height:4px;border-radius:50%;background:rgba(255,240,210,.8);filter:blur(.4px);"></div>` +
+      `background:radial-gradient(circle at 38% 32%,#7A4E29,#4A2C16 70%);box-shadow:0 0 3px 1px rgba(120,64,22,.5);"></div>` +
+      `<div style="position:absolute;left:${CX - 4}px;top:${CY - 6}px;width:6px;height:4px;border-radius:50%;background:rgba(255,240,210,.8);"></div>` +
       // four cake chunks blown out on the diagonals
       chunk(-1, -1, 15, 11, -18) + chunk(1, -1, 16, 10, 22) +
       chunk(-1, 1, 15, 9, 12) + chunk(1, 1, 17, 11, -26) +
@@ -555,7 +555,7 @@ export function playerHtml(team: number, isBot: boolean, dx = 0, dy = 0): string
   // Back of the head when facing up: no face, just a centre seam + nape shadow.
   const back =
     `<div style="position:absolute;left:${CX - 1}px;top:0px;width:2px;height:12px;border-radius:1px;background:rgba(0,0,0,.08);"></div>` +
-    `<div style="position:absolute;left:${CX - 9}px;top:8px;width:18px;height:5px;border-radius:50%;background:rgba(0,0,0,.07);filter:blur(1px);"></div>`;
+    `<div style="position:absolute;left:${CX - 9}px;top:8px;width:18px;height:5px;border-radius:50%;background:rgba(0,0,0,.07);"></div>`;
   return (
     shadowHtml +
     `<div style="position:absolute;left:${CX - 17}px;top:-13px;width:34px;height:40px;` +
@@ -582,7 +582,7 @@ export function shellHtml(): string {
     `border-radius:50% 50% 47% 47%/55% 55% 45% 45%;background:${SHELL.shell};border:2px solid rgba(120,70,38,.6);` +
     `box-shadow:inset 0 -8px 13px rgba(40,22,10,.5),inset 0 8px 13px rgba(255,255,255,.5),0 6px 11px rgba(0,0,0,.16);"></div>` +
     `<div style="position:absolute;left:${CX - 11}px;top:-8px;width:12px;height:19px;border-radius:50%;` +
-    `background:rgba(255,255,255,.7);transform:rotate(20deg);filter:blur(.5px);"></div>` +
+    `background:rgba(255,255,255,.7);transform:rotate(20deg);"></div>` +
     `<div style="position:absolute;left:${CX + 7}px;top:-10px;width:6px;height:6px;border-radius:1px;` +
     `background:#fff;transform:rotate(45deg);box-shadow:0 0 7px 2px rgba(255,255,255,.9);"></div>`
   );

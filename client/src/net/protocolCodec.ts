@@ -16,6 +16,8 @@ import type {
   FeelParams,
   HashMismatchMsg,
   InputBroadcastMsg,
+  LeaderboardEntry,
+  LeaderboardMsg,
   MatchStartMsg,
   PlayerDisconnectMsg,
   RoomPlayer,
@@ -32,6 +34,8 @@ export type {
   FeelParams,
   HashMismatchMsg,
   InputBroadcastMsg,
+  LeaderboardEntry,
+  LeaderboardMsg,
   MatchStartMsg,
   PlayerDisconnectMsg,
   RoomPlayer,
@@ -120,6 +124,10 @@ export function buildHashReport(t: number, hash: number): Uint8Array {
   return encodeMsg(MsgType.HASH_REPORT, { t, hash });
 }
 
+export function buildGetLeaderboard(limit: number): Uint8Array {
+  return encodeMsg(MsgType.GET_LEADERBOARD, { limit });
+}
+
 // ---------------------------------------------------------------------------
 // Server → Client typed decode
 // ---------------------------------------------------------------------------
@@ -185,6 +193,11 @@ export function decodeServerMsg(data: Uint8Array): ServerMsg {
         type: MsgType.PLAYER_DISCONNECT,
         slot: p['slot'] as number,
       } satisfies PlayerDisconnectMsg;
+    case MsgType.LEADERBOARD:
+      return {
+        type: MsgType.LEADERBOARD,
+        entries: p['entries'] as LeaderboardEntry[],
+      } satisfies LeaderboardMsg;
     default:
       throw new Error(`unknown server message type 0x${type.toString(16)}`);
   }

@@ -39,7 +39,7 @@ import { sampleLocalInput } from './input/InputMapper';
 import { runNetMode } from './net/netMode';
 import { Renderer } from './render/Renderer';
 import { type InputFrame, NO_INPUT } from './sim/InputBuffer';
-import { type MapKind, spawnOrderFromSeed } from './sim/Map';
+import { MAP_KINDS, type MapKind, spawnOrderFromSeed } from './sim/Map';
 import { type SimState, createInitialState, tick } from './sim/Sim';
 import { LossRecorder } from './solo/lossRecorder';
 import { runSpectate } from './spectate/spectateMode';
@@ -56,6 +56,16 @@ const randomSeed = (): number => Math.floor(Math.random() * 0x1_0000_0000) >>> 0
 
 /** Clamp big frame gaps (tab switch, breakpoint) to avoid a spiral of death. */
 const MAX_FRAME_MS = 250;
+
+/**
+ * Hard cap on sim ticks advanced per rAF frame. Each tick samples every bot
+ * (v6 = depth-4 forward search), so an unbounded catch-up loop turns one slow
+ * frame (GC hitch, clustered bot decisions, backgrounded tab) into a burst of
+ * heavy ticks that blocks paint — felt as movement lag. Capping the burst keeps
+ * each frame short; solo isn't lockstep, so dropping the small leftover backlog
+ * is invisible (the sim runs a hair behind real time, never freezes).
+ */
+const MAX_TICKS_PER_FRAME = 3;
 
 async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   // Bot count: default 1 when ?bots is absent; clamped to 0..3 otherwise.
@@ -223,16 +233,10 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       : 'Solo — Arrows move · Space drops chocolate';
   };
 
-  // Map kind: ?map=classic|pirate|village (case-insensitive); else → classic.
+  // Map kind: ?map=<any registered kind> (case-insensitive); else → classic.
   const parseMapKind = (raw: string | null): MapKind => {
-    switch (raw?.toLowerCase()) {
-      case 'pirate':
-        return 'pirate';
-      case 'village':
-        return 'village';
-      default:
-        return 'classic';
-    }
+    const k = (raw ?? '').toLowerCase();
+    return MAP_KINDS.includes(k) ? k : 'classic';
   };
   let mapKind: MapKind = parseMapKind(params.get('map'));
 
@@ -375,11 +379,9 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     'position:fixed;top:8px;left:8px;z-index:900;padding:6px 12px;' +
     'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
     "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
-  const mapOptions: ReadonlyArray<readonly [MapKind, string]> = [
-    ['classic', 'Classic'],
-    ['pirate', 'Pirate'],
-    ['village', 'Village'],
-  ];
+  const mapOptions: ReadonlyArray<readonly [MapKind, string]> = MAP_KINDS.map(
+    (k) => [k, k.charAt(0).toUpperCase() + k.slice(1)] as const,
+  );
   for (const [value, label] of mapOptions) {
     const opt = document.createElement('option');
     opt.value = value;
@@ -505,7 +507,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     last = now;
     acc += dt;
 
-    while (acc >= TICK_MS) {
+    let steps = 0;
+    while (acc >= TICK_MS && steps < MAX_TICKS_PER_FRAME) {
       const inputs: InputFrame[] = [sampleLocalInput(keyboard)];
       for (let slot = 1; slot <= effectiveBots(); slot++) {
         const c = botControllers[slot - 1];
@@ -517,7 +520,11 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       lossRecorder.tick(prevTick.tick, inputs, prevTick, cur);
       matchSound.tick(prevTick, cur);
       acc -= TICK_MS;
+      steps += 1;
     }
+    // Hit the per-frame tick cap → drop the leftover backlog so it can't snowball
+    // into an even longer next frame (see MAX_TICKS_PER_FRAME).
+    if (acc >= TICK_MS) acc = 0;
 
     // Auto-restart: once the match is OVER (last team standing), schedule a
     // fresh random match after ~2.5s. Fires once per match; reset() clears the

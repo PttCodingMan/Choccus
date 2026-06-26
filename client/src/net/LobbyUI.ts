@@ -16,8 +16,9 @@
  * lobby and the match read as one game, not two. All original assets per the
  * clean-room rules in CLAUDE.md.
  */
-import { playerHtml, TW } from '../render/candyArt';
+import { playerHtml, TEAM_PALETTE, TW } from '../render/candyArt';
 import { sfx } from '../audio/Sfx';
+import { MAP_KINDS } from '../sim/Map';
 import type { RoomStateMsg, RoomPlayer } from './protocolCodec';
 
 const FONT = "'Nunito',system-ui,sans-serif";
@@ -148,6 +149,29 @@ function label(parent: HTMLElement, text: string): void {
   l.textContent = text;
 }
 
+/** A small labelled <select> column (host room settings). */
+function labeledSelect(
+  parent: HTMLElement,
+  labelText: string,
+  options: ReadonlyArray<readonly [string, string]>,
+): HTMLSelectElement {
+  const col = el('div', 'display:flex;flex-direction:column;gap:3px;', parent);
+  label(col, labelText);
+  const sel = el(
+    'select',
+    'padding:6px 8px;border-radius:10px;cursor:pointer;' +
+      `background:${PALETTE.input};color:${PALETTE.text};font:700 12px ${FONT_HEAD};` +
+      `border:2px solid ${PALETTE.inputBorder};outline:none;`,
+    col,
+  );
+  for (const [value, text] of options) {
+    const opt = el('option', '', sel);
+    opt.value = value;
+    opt.textContent = text;
+  }
+  return sel;
+}
+
 export class LobbyUI {
   readonly root: HTMLDivElement;
 
@@ -166,11 +190,23 @@ export class LobbyUI {
   onSolo?: () => void;
   /** Open the illustrated how-to-play guide page. */
   onGuide?: () => void;
+  /** Start the OAuth login flow for a provider (navigates away). */
+  onLogin?: (provider: 'discord' | 'google') => void;
+  /** Clear the stored session (stay on the landing screen). */
+  onLogout?: () => void;
+  /** Host-only room settings (offline LocalRoom; hidden for relay rooms). */
+  onSelectMap?: (map: string) => void;
+  onSelectFormat?: (format: string) => void;
+  onSelectColor?: (color: number) => void;
   /** Build the shareable invite URL for a room id (injected by netMode). */
   buildInviteUrl?: (roomId: string) => string;
 
   // -- landing ------------------------------------------------------------------
   private readonly landing: HTMLDivElement;
+  private readonly authRow: HTMLDivElement;
+  private loginEnabled = true;
+  private readonly leaderboardEl: HTMLDivElement;
+  private readonly leaderboardRows: HTMLDivElement;
   private readonly nameInput: HTMLInputElement;
   private readonly roomInput: HTMLInputElement;
   private readonly landingStatus: HTMLDivElement;
@@ -181,6 +217,10 @@ export class LobbyUI {
   private readonly roomScreen: HTMLDivElement;
   private readonly roomCode: HTMLSpanElement;
   private readonly copyBtn: HTMLButtonElement;
+  private readonly hostSettingsEl: HTMLDivElement;
+  private readonly mapSelect: HTMLSelectElement;
+  private readonly formatSelect: HTMLSelectElement;
+  private readonly colorSwatches: HTMLButtonElement[] = [];
   private readonly rosterEl: HTMLDivElement;
   private readonly roomStatus: HTMLDivElement;
   private readonly readyBtn: HTMLButtonElement;
@@ -258,6 +298,10 @@ export class LobbyUI {
       this.landing,
     );
 
+    // Account row (login buttons / logged-in pill). Filled by setAuthName().
+    this.authRow = el('div', 'margin-bottom:16px;', this.landing);
+    this.setAuthName(null);
+
     label(this.landing, 'Your name');
     this.nameInput = input(this.landing, 'Player0000');
     this.nameInput.maxLength = 16;
@@ -280,14 +324,29 @@ export class LobbyUI {
       this.landing,
     );
 
-    // Offline single-player practice.
+    // Offline room: create a room, add bots, play — no relay (see net/LocalRoom).
     const soloRow = el('div', 'margin-top:4px;', this.landing);
-    button(soloRow, '🍫 Solo Practice').addEventListener('click', () =>
+    button(soloRow, '🍫 開房間 (vs Bot)').addEventListener('click', () =>
       this.onSolo?.(),
     );
     button(soloRow, '📖 玩法介紹').addEventListener('click', () =>
       this.onGuide?.(),
     );
+
+    // Leaderboard panel (filled by setLeaderboard once the relay replies;
+    // hidden until then / when unreachable).
+    this.leaderboardEl = el(
+      'div',
+      `display:none;margin-top:16px;padding-top:14px;border-top:2px solid ${PALETTE.cardBorder};`,
+      this.landing,
+    );
+    const lbTitle = el(
+      'div',
+      `font:800 14px ${FONT_HEAD};color:${PALETTE.text};margin-bottom:8px;`,
+      this.leaderboardEl,
+    );
+    lbTitle.textContent = '🏆 天梯 Top 10';
+    this.leaderboardRows = el('div', 'display:flex;flex-direction:column;gap:3px;', this.leaderboardEl);
 
     // Sound toggle + "click to enable" hint.
     const soundRow = el('div', 'margin-top:16px;display:flex;align-items:center;gap:10px;', this.landing);
@@ -337,6 +396,47 @@ export class LobbyUI {
     );
     this.copyBtn = button(codeRow, 'Copy invite link');
     this.copyBtn.addEventListener('click', () => this.copyInviteLink());
+
+    // Host-only settings (offline LocalRoom): map + team format. Hidden by
+    // default (showRoom hides it; setHostSettings re-shows for the local room).
+    this.hostSettingsEl = el(
+      'div',
+      'display:none;gap:10px;margin-bottom:12px;flex-wrap:wrap;',
+      this.roomScreen,
+    );
+    this.mapSelect = labeledSelect(
+      this.hostSettingsEl,
+      '地圖',
+      MAP_KINDS.map((k) => [k, k.charAt(0).toUpperCase() + k.slice(1)] as const),
+    );
+    this.mapSelect.addEventListener('change', () => this.onSelectMap?.(this.mapSelect.value));
+    this.formatSelect = labeledSelect(this.hostSettingsEl, '隊形', [
+      ['ffa', 'Free For All'],
+      ['1v2', '1 vs 2'],
+      ['1v3', '1 vs 3'],
+      ['2v2', '2v2 Team'],
+    ]);
+    this.formatSelect.addEventListener('change', () =>
+      this.onSelectFormat?.(this.formatSelect.value),
+    );
+
+    // Colour picker: one swatch per body palette; the chosen one = the player's
+    // team/colour in the match (see net/LocalRoom).
+    const colorCol = el('div', 'display:flex;flex-direction:column;gap:3px;', this.hostSettingsEl);
+    label(colorCol, '顏色');
+    const swatchRow = el('div', 'display:flex;gap:6px;', colorCol);
+    TEAM_PALETTE.forEach((pal, i) => {
+      const sw = el(
+        'button',
+        `width:26px;height:26px;border-radius:50%;cursor:pointer;padding:0;` +
+          `background:linear-gradient(165deg,${pal.hi},${pal.base} 58%,${pal.lo});` +
+          `border:3px solid transparent;box-shadow:0 2px 0 rgba(150,108,58,0.28);`,
+        swatchRow,
+      );
+      sw.addEventListener('click', () => this.onSelectColor?.(i));
+      this.colorSwatches.push(sw);
+    });
+
     this.rosterEl = el('div', 'margin-bottom:10px;', this.roomScreen);
     this.roomStatus = el(
       'div',
@@ -426,8 +526,90 @@ export class LobbyUI {
     this.nameInput.value = name;
   }
 
+  /** Current name-field value (trimmed; 'Player' if blank). */
+  getName(): string {
+    return this.nameValue();
+  }
+
+  /** Hide the whole account row (OAuth disabled until the apps are live). When
+   *  false, setAuthName renders nothing. Call before setAuthName. */
+  setLoginEnabled(enabled: boolean): void {
+    this.loginEnabled = enabled;
+  }
+
+  /** Render the account row: logged-in pill + Logout, or the provider buttons.
+   *  `name` null = logged out. (Discord/Google login navigates the page away.) */
+  setAuthName(name: string | null): void {
+    this.authRow.replaceChildren();
+    if (!this.loginEnabled) return; // OAuth off → no account UI at all
+    if (name !== null) {
+      const who = el('div', `font:700 13px ${FONT};color:${PALETTE.text};margin-bottom:4px;`, this.authRow);
+      who.textContent = `🔓 已登入：${name}`;
+      button(this.authRow, '登出').addEventListener('click', () => this.onLogout?.());
+      return;
+    }
+    const hint = el('div', `font:600 12px ${FONT};color:${PALETTE.soft};margin-bottom:4px;`, this.authRow);
+    hint.textContent = '登入以保留評分（跨裝置；可略過直接玩）';
+    button(this.authRow, 'Discord 登入', '#5865F2').addEventListener('click', () =>
+      this.onLogin?.('discord'),
+    );
+    button(this.authRow, 'Google 登入').addEventListener('click', () => this.onLogin?.('google'));
+  }
+
+  /** Render the lobby leaderboard. null = couldn't load (hide the panel);
+   *  [] = no games yet (show a note). Rows are pre-labelled by netMode (bot ids
+   *  resolved to friendly archetype names there). */
+  setLeaderboard(
+    rows: ReadonlyArray<{ label: string; score: number; games: number; isBot: boolean }> | null,
+  ): void {
+    if (rows === null) {
+      this.leaderboardEl.style.display = 'none';
+      return;
+    }
+    this.leaderboardEl.style.display = 'block';
+    this.leaderboardRows.replaceChildren();
+    if (rows.length === 0) {
+      const empty = el('div', `font:600 12px ${FONT};color:${PALETTE.soft};`, this.leaderboardRows);
+      empty.textContent = '尚無線上對戰紀錄';
+      return;
+    }
+    rows.forEach((r, i) => {
+      const row = el('div', 'display:flex;align-items:center;gap:8px;', this.leaderboardRows);
+      const rank = el(
+        'div',
+        `width:20px;text-align:right;font:800 13px ${FONT_HEAD};color:${PALETTE.soft};`,
+        row,
+      );
+      rank.textContent = `${i + 1}`;
+      const nameEl = el(
+        'div',
+        `flex:1;min-width:0;font:700 13px ${FONT};color:${PALETTE.text};` +
+          'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+        row,
+      );
+      nameEl.textContent = r.label;
+      const scoreEl = el('div', `font:800 13px ${FONT_HEAD};color:${PALETTE.primary};`, row);
+      scoreEl.textContent = r.score.toFixed(1);
+    });
+  }
+
   setRoomId(roomId: string): void {
     this.roomInput.value = roomId;
+  }
+
+  /** Show + sync the host-settings row (offline room). null = leave it hidden
+   *  (relay rooms). Call AFTER showRoom (which hides it by default). */
+  setHostSettings(opts: { map: string; format: string; color: number } | null): void {
+    if (opts === null) {
+      this.hostSettingsEl.style.display = 'none';
+      return;
+    }
+    this.mapSelect.value = opts.map;
+    this.formatSelect.value = opts.format;
+    this.colorSwatches.forEach((sw, i) => {
+      sw.style.borderColor = i === opts.color ? PALETTE.text : 'transparent';
+    });
+    this.hostSettingsEl.style.display = 'flex';
   }
 
   /** Pre-select this tier in empty-seat "+ Bot" pickers (from local DDA). */
@@ -458,12 +640,20 @@ export class LobbyUI {
     this.landingStatus.textContent = status;
   }
 
+  /** Override the room status line (e.g. an offline-room format hint). */
+  setRoomStatus(text: string): void {
+    this.roomStatus.textContent = text;
+  }
+
   /** Show/refresh the room view from a RoomState snapshot. */
   showRoom(state: RoomStateMsg): void {
     this.showOnly(this.roomScreen);
     this.lastRoomState = state;
     this.currentRoomId = state.roomId;
     this.roomCode.textContent = state.roomId;
+    // Host settings are offline-room only; relay rooms re-render via showRoom
+    // without re-showing them. LocalRoom re-shows them after each showRoom.
+    this.hostSettingsEl.style.display = 'none';
 
     // Always render all 4 slots: occupied ones show the player/bot card, empty
     // ones offer "+ Bot".
@@ -509,14 +699,14 @@ export class LobbyUI {
   }
 
   /** A candy-blob avatar (chef-hat cutie for humans, robot-chef for bots). */
-  private avatar(slot: number, isBot: boolean, dim: boolean): HTMLDivElement {
+  private avatar(colorIdx: number, isBot: boolean, dim: boolean): HTMLDivElement {
     const av = el('div', 'position:relative;width:50px;height:58px;flex:0 0 auto;', undefined);
     if (dim) {
       av.style.opacity = '0.4';
       av.style.filter = 'grayscale(0.6)';
     }
     const o = el('div', `position:absolute;left:${25 - AV_CX}px;top:36px;`, av);
-    o.innerHTML = playerHtml(slot, isBot, 0, 0);
+    o.innerHTML = playerHtml(colorIdx, isBot, 0, 0);
     return av;
   }
 
@@ -529,7 +719,8 @@ export class LobbyUI {
       ready ? 'rgba(127,209,185,0.7)' : 'rgba(214,170,110,0.35)',
     );
 
-    row.appendChild(this.avatar(p.slot, p.isBot ?? false, !p.connected));
+    // Colour by the explicit palette override (offline colour picking) else slot.
+    row.appendChild(this.avatar(p.color ?? p.slot, p.isBot ?? false, !p.connected));
 
     // Name + slot.
     const col = el('div', 'flex:1 1 auto;min-width:0;', row);

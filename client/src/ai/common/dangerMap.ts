@@ -18,7 +18,8 @@
  * EXACT ALIGNMENT WITH client/src/sim/Explosion.ts processDetonations():
  * - Detonation FIFO/chain: detonations are processed in bomb-array order; an arm
  *   that reaches an EMPTY tile holding another undetonated bomb CHAINS it the
- *   SAME tick and STOPS there. We replicate this with a SINGLE FIFO queue +
+ *   SAME tick and FLOWS ON through it (pass-through: the chained bomb does not
+ *   shield what's behind it). We replicate this with a SINGLE FIFO queue +
  *   detonated[] flag array bounded by bombs.length (mirroring processDetonations)
  *   drained by a persistent-cursor helper, so a bomb chained at ANY point —
  *   including one discovered while force-detonating the fixed-order tail — is
@@ -31,9 +32,9 @@
  *       gets NO flame cell — it is lethal ONLY on the exact detonate tick (the
  *       brick is solid right up to detonation), window [t, t + 1).
  *     • HARD / off-map → arm stops, no cell.
- *     • a chained bomb's own tile is covered by the chained bomb's center cell,
- *       so the chaining arm STOPS without stamping a cell there (the chained
- *       bomb stamps that tile itself).
+ *     • a chained bomb's tile gets a flame cell from the chaining arm (which
+ *       flows on through it) AND the chained bomb's own center cell — both for
+ *       the full spark window, so the tile is lethal [t, t + SPARK_TICKS).
  * - Already-live state.explosions cells: lethal NOW through their remaining
  *   ttlTicks, i.e. interval [0, ttlTicks).
  *
@@ -141,10 +142,9 @@ export function buildDangerMap(
           stamp(tile, t, t + 1);
           break;
         }
-        // EMPTY tile: chain an undetonated bomb sitting here (same tick), and
-        // STOP — the chained bomb's own center cell will cover this tile, so we
-        // do NOT stamp a flame cell here.
-        let chained = false;
+        // EMPTY tile: chain an undetonated bomb sitting here (same tick), then
+        // FLOW ON through it (pass-through — the chained bomb no longer shields
+        // what's behind it), so we still stamp a flame cell here.
         for (let j = 0; j < n; j++) {
           const other = bombs[j];
           if (
@@ -158,12 +158,10 @@ export function buildDangerMap(
             const cur = detonateTick[j] ?? other.fuseTicks;
             detonateTick[j] = Math.min(cur, t);
             queue.push(j);
-            chained = true;
-            break;
+            break; // at most one bomb per tile: stop scanning, not the arm
           }
         }
-        if (chained) break;
-        // Plain EMPTY tile gets a flame cell for the full spark window.
+        // Flame cell for the full spark window (the arm passes through the bomb).
         stamp(tile, t, t + SPARK_TICKS);
       }
     }

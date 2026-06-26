@@ -5,8 +5,10 @@
  * - off-map or HARD brick → arm stops, no cell there;
  * - SOFT brick → destroy it (set EMPTY), maybe drop an item, arm STOPS; the
  *   cleared tile gets NO cell so it is immediately safe to enter (grab item);
- * - another bomb → chain-detonate it (same tick), arm STOPS (the chained
- *   bomb's own center cell covers that tile);
+ * - another bomb → chain-detonate it (same tick) and FLOW ON through it: a
+ *   chained bomb no longer shields what's behind it, so the bigger blast keeps
+ *   its full reach (e.g. a fire-2 bomb in front of a fire-7 bomb doesn't clip
+ *   the fire-7 arm — it still reaches 7). The chained bomb adds its own arms;
  * - otherwise → spawn a cell, continue outward.
  *
  * Arms read the TICK-START layout, not the grid we mutate as bricks clear: a
@@ -131,8 +133,10 @@ export function processDetonations(
           }
           break;
         }
-        // EMPTY tile: chain an undetonated bomb sitting on it, else flow on.
-        let chained = false;
+        // EMPTY tile: chain any undetonated bomb sitting here (same tick), then
+        // FLOW ON through it. A chained bomb no longer shields what's behind it,
+        // so the arm keeps its full reach (BnB-style); the chained bomb adds its
+        // own arms when it detonates.
         for (let j = 0; j < bombs.length; j++) {
           const other = bombs[j];
           if (
@@ -143,11 +147,9 @@ export function processDetonations(
           ) {
             detonated[j] = true;
             queue.push(j);
-            chained = true;
-            break;
+            break; // at most one bomb per tile: stop scanning, not the arm
           }
         }
-        if (chained) break;
         cells.push({ tileX: tx, tileY: ty, ttlTicks: SPARK_TICKS });
       }
     }

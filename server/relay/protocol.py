@@ -29,6 +29,7 @@ class MsgType(IntEnum):
     ADD_BOT = 0x06
     REMOVE_BOT = 0x07
     MATCH_RESULT = 0x08
+    GET_LEADERBOARD = 0x09
 
     # Server → Client
     ROOM_STATE = 0x10
@@ -38,6 +39,7 @@ class MsgType(IntEnum):
     STALL_NOTICE = 0x14
     HASH_MISMATCH = 0x15
     PLAYER_DISCONNECT = 0x16
+    LEADERBOARD = 0x17
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +104,10 @@ def hash_report(t: int, hash_: int) -> bytes:
     return encode(MsgType.HASH_REPORT, {"t": t, "hash": hash_})
 
 
+def get_leaderboard(limit: int = 10) -> bytes:
+    return encode(MsgType.GET_LEADERBOARD, {"limit": limit})
+
+
 # ---------------------------------------------------------------------------
 # Server → Client builders
 # ---------------------------------------------------------------------------
@@ -145,3 +151,8 @@ def hash_mismatch(t: int, hashes: list[int]) -> bytes:
 
 def player_disconnect(slot: int) -> bytes:
     return encode(MsgType.PLAYER_DISCONNECT, {"slot": slot})
+
+
+def leaderboard(entries: list[dict[str, Any]]) -> bytes:
+    """LeaderboardMsg — entries: [{playerId, name, score, games}], score desc."""
+    return encode(MsgType.LEADERBOARD, {"entries": entries})

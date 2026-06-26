@@ -394,7 +394,7 @@ const CENTER_Y = Math.floor(MAP_ROWS / 2); // 6
 /**
  * Per-tile SUDDEN-DEATH SURVIVAL RANK: how LATE a tile hardens in the inward
  * spiral (sim/SuddenDeath SPIRAL_ORDER) — higher = survives the shrink longer
- * (the center is last). Border / non-interior tiles get 0 (never standable late).
+ * (the center is last). The true outer ring hardens first (rank 0..), center last.
  * Pure compile-time constant of the map dimensions; the shrink-survival term
  * (gated by MapProfile.shrinkSurvivalWeight) pulls toward higher-rank tiles as
  * the shrink nears, so the bot drifts to the surviving center BEFORE the wall

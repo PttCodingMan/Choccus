@@ -9,7 +9,8 @@
  *  4. players: length, then per player (array order):
  *     slot, alive(0/1), trapped(0/1), trappedTicks, posX, posY, facing,
  *     fire, cannon, speedBonusTenths, activeBombs, prevDir, prevAction,
- *     bufferedDir, bufferedTicks, heldStack.length, heldStack elements
+ *     bufferedDir, bufferedTicks, pushChargeDir, pushChargeTicks,
+ *     heldStack.length, heldStack elements
  *  5. bombs: length, then per bomb: ownerSlot, tileX, tileY, fuseTicks, fire
  *  6. explosions: length, then per cell: tileX, tileY, ttlTicks
  *  7. items: length, then per item: tileX, tileY, kind
@@ -71,6 +72,8 @@ export function hashSimState(s: SimState): number {
     h = foldInt(h, p.prevAction);
     h = foldInt(h, p.bufferedDir);
     h = foldInt(h, p.bufferedTicks);
+    h = foldInt(h, p.pushChargeDir);
+    h = foldInt(h, p.pushChargeTicks);
     h = foldInt(h, p.heldStack.length);
     for (const d of p.heldStack) h = foldInt(h, d);
   }

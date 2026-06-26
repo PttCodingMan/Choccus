@@ -64,6 +64,28 @@ class RatingStore:
         """Display score (μ − 3σ) per id, for roster display."""
         return {pid: ordinal(*self.get(pid)) for pid in player_ids}
 
+    def top(self, limit: int = 10) -> list[dict]:
+        """Highest-scoring players (μ − 3σ desc) for the lobby leaderboard.
+
+        Includes bots (``bot:<tier>``) — they are rated on the same scale; the
+        client tags + renames them. Only rows with at least one game appear (a
+        never-rated id keeps the default score and would clutter the board).
+        """
+        rows = self._db.execute(
+            "SELECT player_id, name, mu, sigma, games FROM ratings "
+            "WHERE games > 0 ORDER BY (mu - 3.0 * sigma) DESC LIMIT ?",
+            (max(0, limit),),
+        ).fetchall()
+        return [
+            {
+                "playerId": pid,
+                "name": name or "",
+                "score": round(ordinal(mu, sigma), 1),
+                "games": games,
+            }
+            for pid, name, mu, sigma, games in rows
+        ]
+
     # -- writes ---------------------------------------------------------------
 
     def apply_match(

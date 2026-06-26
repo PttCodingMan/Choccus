@@ -24,6 +24,7 @@ export const MsgType = {
   ADD_BOT: 0x06,
   REMOVE_BOT: 0x07,
   MATCH_RESULT: 0x08,
+  GET_LEADERBOARD: 0x09,
 
   // Server → Client
   ROOM_STATE: 0x10,
@@ -33,6 +34,7 @@ export const MsgType = {
   STALL_NOTICE: 0x14,
   HASH_MISMATCH: 0x15,
   PLAYER_DISCONNECT: 0x16,
+  LEADERBOARD: 0x17,
 } as const;
 export type MsgType = (typeof MsgType)[keyof typeof MsgType];
 
@@ -73,6 +75,9 @@ export interface RoomPlayer {
   botDifficulty?: string;
   /** Conservative rating score (μ − 3σ); shown in the roster. */
   score?: number;
+  /** Body-palette index override for the roster avatar (offline room colour
+   *  picking). Falls back to the slot index when absent. */
+  color?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +144,13 @@ export interface HashReportMsg {
   hash: number;
 }
 
+/** Request the global rating leaderboard (any time; not room-scoped). */
+export interface GetLeaderboardMsg {
+  type: typeof MsgType.GET_LEADERBOARD;
+  /** Max rows wanted (server clamps; default 10). */
+  limit?: number;
+}
+
 export type ClientMsg =
   | JoinRoomMsg
   | LeaveRoomMsg
@@ -147,7 +159,8 @@ export type ClientMsg =
   | RemoveBotMsg
   | MatchResultMsg
   | InputFrameMsg
-  | HashReportMsg;
+  | HashReportMsg
+  | GetLeaderboardMsg;
 
 // ---------------------------------------------------------------------------
 // Server → Client
@@ -209,6 +222,22 @@ export interface PlayerDisconnectMsg {
   slot: number;
 }
 
+/** One leaderboard row. `playerId` lets the client tag bots (`bot:<tier>`) and
+ *  render a friendly archetype label; humans show `name`. */
+export interface LeaderboardEntry {
+  playerId: string;
+  name: string;
+  /** Conservative rating score (μ − 3σ), rounded. */
+  score: number;
+  games: number;
+}
+
+/** The global rating leaderboard, top rows by score (reply to GET_LEADERBOARD). */
+export interface LeaderboardMsg {
+  type: typeof MsgType.LEADERBOARD;
+  entries: LeaderboardEntry[];
+}
+
 export type ServerMsg =
   | RoomStateMsg
   | MatchStartMsg
@@ -216,4 +245,5 @@ export type ServerMsg =
   | TickReadyMsg
   | StallNoticeMsg
   | HashMismatchMsg
-  | PlayerDisconnectMsg;
+  | PlayerDisconnectMsg
+  | LeaderboardMsg;
