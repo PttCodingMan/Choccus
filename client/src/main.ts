@@ -4,9 +4,11 @@
  *   ?mode=solo      — solo practice: one human player vs N AI bots (last survivor wins).
  *   ?mode=spectate  — bot-vs-bot spectator: watch AI bots fight (see spectate/spectateMode.ts).
  *
- * Solo mode owns ALL wall-clock timing: a rAF loop with a fixed-timestep
- * accumulator. The sim only ever receives whole ticks; rendering interpolates
- * between the last two states with alpha = acc / TICK_MS.
+ * Solo runs through the SAME LockstepEngine as net play, driven by an in-process
+ * LoopbackTransport (no socket) wrapped by the unified MatchRunner — which owns
+ * the rAF loop, the fixed-timestep accumulator, the countdown intro, auto-restart
+ * and the loss recorder. This file only parses URL params, builds the picker UI,
+ * and hands the MatchRunner a `rebuild` factory that re-reads the current config.
  *
  * Controls — Arrows move · Space drops chocolate · R: start a new random match.
  *
@@ -21,8 +23,6 @@
  * R-reset, never a mid-match swap), which re-rolls the seed too. Online mode
  * never shows the panel — its params come from MatchStart.
  */
-import { TICK_MS } from '../../shared/constants';
-import { GamePhase } from '../../shared/types';
 import {
   AI_VERSIONS,
   type BotSpec,
@@ -31,17 +31,15 @@ import {
   parseDifficulty,
 } from './ai';
 import { championFor } from './ai/mapChampions';
-import { matchSound } from './audio/MatchSound';
 import { sfx } from './audio/Sfx';
 import { type FeelParams, makeFeelParams } from './config/FeelParams';
 import { KeyboardInput } from './input/KeyboardInput';
-import { sampleLocalInput } from './input/InputMapper';
+import { LoopbackTransport } from './net/LoopbackTransport';
+import { MatchRunner, type MatchBot, type MatchSpec } from './net/MatchRunner';
 import { runNetMode } from './net/netMode';
+import { MsgType, type MatchStartMsg } from './net/protocolCodec';
 import { Renderer } from './render/Renderer';
-import { type InputFrame, NO_INPUT } from './sim/InputBuffer';
-import { MAP_KINDS, type MapKind, spawnOrderFromSeed } from './sim/Map';
-import { type SimState, createInitialState, tick } from './sim/Sim';
-import { LossRecorder } from './solo/lossRecorder';
+import { MAP_KINDS, type MapKind } from './sim/Map';
 import { runSpectate } from './spectate/spectateMode';
 import { FeelPanel } from './ui/FeelPanel';
 import { runGuide } from './ui/guidePage';
@@ -53,19 +51,6 @@ import { runGuide } from './ui/guidePage';
  * (Never use Math.random() inside the sim itself; see sim/Prng.ts.)
  */
 const randomSeed = (): number => Math.floor(Math.random() * 0x1_0000_0000) >>> 0;
-
-/** Clamp big frame gaps (tab switch, breakpoint) to avoid a spiral of death. */
-const MAX_FRAME_MS = 250;
-
-/**
- * Hard cap on sim ticks advanced per rAF frame. Each tick samples every bot
- * (v6 = depth-4 forward search), so an unbounded catch-up loop turns one slow
- * frame (GC hitch, clustered bot decisions, backgrounded tab) into a burst of
- * heavy ticks that blocks paint — felt as movement lag. Capping the burst keeps
- * each frame short; solo isn't lockstep, so dropping the small leftover backlog
- * is invisible (the sim runs a hair behind real time, never freezes).
- */
-const MAX_TICKS_PER_FRAME = 3;
 
 async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   // Bot count: default 1 when ?bots is absent; clamped to 0..3 otherwise.
@@ -79,28 +64,13 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
       : Math.max(0, Math.min(3, Math.trunc(botsRaw)));
   const difficulty = parseDifficulty(params.get('difficulty'));
 
-  // Team format: 'ffa' (default) = everyone on their own team, bot-count picker
-  // active. '2v2' = fixed 4 players, diagonal teams [0,1,1,0] (human slot0 +
-  // slot3 vs slots1,2), bot count forced to 3. ?format=ffa|2v2 (case-insensitive,
-  // else → ffa) sets the initial value.
-  type TeamFormat = 'ffa' | '2v2';
-  const parseFormat = (raw: string | null): TeamFormat =>
-    raw?.toLowerCase() === '2v2' ? '2v2' : 'ffa';
-  let format: TeamFormat = parseFormat(params.get('format'));
-
-  // Diagonal teams for 2v2: human slot0 + slot3 vs slots1,2.
-  const TEAMS_2V2: readonly number[] = [0, 1, 1, 0];
-
-  // Effective bot count for the current format: forced to 3 in 2v2 (4 players
-  // total), otherwise the picker value. Used at every count consumption site
-  // (numPlayers, buildBots loop, per-tick bot sampling) WITHOUT mutating `bots`,
-  // so switching back to FFA restores the picker selection.
-  const effectiveBots = (): number => (format === '2v2' ? 3 : bots);
-
-  // Team array passed to createInitialState: the fixed 2v2 diagonal, or
-  // undefined in FFA (keeps the FFA path byte-for-byte equivalent to before).
-  const teamsForFormat = (): readonly number[] | undefined =>
-    format === '2v2' ? TEAMS_2V2 : undefined;
+  // MANUAL per-slot teams (consistent with the net + offline rooms): team[slot]
+  // = colour index 0..3. Default = team[i] = i (FFA: everyone on their own team).
+  // Edited via the per-slot team pickers (you are always host in solo). Indexed
+  // by slot 0..3; only the first numPlayers entries are used. A team array that
+  // equals the default [0,1,2,…] is treated as FFA (teams omitted → byte-
+  // identical to before).
+  const teams: number[] = [0, 1, 2, 3];
 
   // Named-strategy mode (?strategy=). Independent of difficulty: when a strategy
   // is given, every bot uses the strategy tuning and difficulty is ignored;
@@ -187,18 +157,17 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     const base = AI_VERSIONS[version]!.botNameFor(slot, effectiveSpec(mapKind));
     return version === LATEST_AI_VERSION ? base : `${base} v${version}`;
   };
+  // True when any of the active slots share a team (manual teams in play); used
+  // to annotate HUD labels with the team number so groupings are legible.
+  const teamsActive = (): boolean => {
+    const n = 1 + bots;
+    return teams.slice(0, n).some((t, i) => t !== i);
+  };
   const buildSlotLabels = (): (string | undefined)[] => {
-    if (format === '2v2') {
-      // Diagonal teams [0,1,1,0]: slot0 = you, slot3 = ally, slots1,2 = enemies.
-      return [
-        'YOU',
-        botName(1),
-        botName(2),
-        `ALLY (${botName(3)})`,
-      ];
-    }
-    const labels: (string | undefined)[] = ['YOU'];
-    for (let slot = 1; slot <= bots; slot++) labels.push(botName(slot));
+    const grouped = teamsActive();
+    const tag = (slot: number): string => (grouped ? ` [T${teams[slot]! + 1}]` : '');
+    const labels: (string | undefined)[] = [`YOU${tag(0)}`];
+    for (let slot = 1; slot <= bots; slot++) labels.push(`${botName(slot)}${tag(slot)}`);
     return labels;
   };
 
@@ -225,12 +194,9 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   // Render-layer-only HUD hint text. Rebuilt on every reset() so the bot count
   // and bot-strength mode shown track the current picker selections.
   const buildHint = (): string => {
-    if (format === '2v2') {
-      return `2v2 Team (${buildStrengthLabel()}) — Arrows move · Space drops chocolate`;
-    }
-    return bots > 0
-      ? `Solo +${bots} AI (${buildStrengthLabel()}) — Arrows move · Space drops chocolate`
-      : 'Solo — Arrows move · Space drops chocolate';
+    if (bots === 0) return 'Solo — Arrows move · Space drops chocolate';
+    const teamNote = teamsActive() ? ' · 隊伍已分組' : '';
+    return `Solo +${bots} AI (${buildStrengthLabel()})${teamNote} — Arrows move · Space drops chocolate`;
   };
 
   // Map kind: ?map=<any registered kind> (case-insensitive); else → classic.
@@ -241,105 +207,72 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   let mapKind: MapKind = parseMapKind(params.get('map'));
 
   let feel: FeelParams = makeFeelParams();
-  // Current match seed — re-rolled on every reset() so each match plays out
-  // differently (item drops + bot play). buildBots / createInitialState below
-  // read this current value.
-  let seed = randomSeed();
-  // FFA: team = slot (human team 0 vs each bot on its own team). 2v2: diagonal
-  // teams [0,1,1,0]. last team standing wins.
-  let cur: SimState = createInitialState(seed, feel, 1 + effectiveBots(), {
-    pvp: true,
-    map: mapKind,
-    teams: teamsForFormat(),
-    spawnOrder: spawnOrderFromSeed(seed),
-  });
-  let prev: SimState = cur;
-
-  // Deterministic bot brains, one per AI slot (1..effectiveBots). Reads the
-  // current match seed at call time → bots re-derive from the new seed each
-  // match. Each slot's brain comes from its chosen AI version module.
-  const buildBots = (): IBotController[] => {
-    const arr: IBotController[] = [];
-    for (let slot = 1; slot <= effectiveBots(); slot++) {
-      arr.push(moduleForSlot(slot, mapKind).createBot(seed, slot, effectiveSpec(mapKind)));
-    }
-    return arr;
-  };
-  let botControllers = buildBots();
-
-  // Explicit team-per-slot (FFA default = team = slot), matching what
-  // createInitialState builds — passed to the recorder so a replay reproduces
-  // the exact teams.
-  const explicitTeams = (): number[] =>
-    teamsForFormat()?.slice() ?? Array.from({ length: 1 + effectiveBots() }, (_, i) => i);
-
-  // Records each solo match as a replay fixture; persists it on an AI loss so we
-  // can re-run the loss headless (`npm run replay`) and diagnose it.
-  const lossRecorder = new LossRecorder();
-  lossRecorder.start(
-    seed,
-    mapKind,
-    1 + effectiveBots(),
-    explicitTeams(),
-    spawnOrderFromSeed(seed).slice(0, 1 + effectiveBots()),
-  );
 
   const keyboard = new KeyboardInput();
-  keyboard.attach(window);
 
   const renderer = await Renderer.create();
-  renderer.setSlotLabels(buildSlotLabels());
-  renderer.setHudHint(buildHint(), true);
   const mount = document.getElementById('app');
   if (!mount) {
     throw new Error('#app mount point missing');
   }
   mount.appendChild(renderer.canvas);
 
-  let acc = 0;
-  let last: number | undefined;
   let audioUnlocked = false;
 
-  // Auto-restart on game over (pure client orchestration — no sim effect). When
-  // the match ends we schedule a single reset() ~2.5s later so the player need
-  // not press R. `restartScheduled` guards against firing more than once per
-  // match; `restartTimer` lets reset() cancel a still-pending auto-restart
-  // (e.g. when R is pressed during the window).
-  let restartScheduled = false;
-  let restartTimer: ReturnType<typeof setTimeout> | undefined;
-
-  /** Start a NEW random match (R-reset / feel apply / map change / auto-restart). */
-  const reset = (): void => {
-    // Cancel any pending auto-restart and clear the per-match guard so the next
-    // match can auto-restart when it ends.
-    if (restartTimer !== undefined) {
-      clearTimeout(restartTimer);
-      restartTimer = undefined;
+  // Build the next match spec from the CURRENT picker config. Re-reads every
+  // mutable (bots/teams/map/feel) + re-rolls the seed, so a picker change or R
+  // just calls runner.restart(). Bots are pre-built deterministic brains (slot
+  // 1..N): solo is local, so the loopback path supplies the exact controller per
+  // slot (any archetype/version) rather than a net strength tier. HUD labels are
+  // refreshed here so a changed bot count shows on the very next match.
+  const rebuild = (): MatchSpec => {
+    const seed = randomSeed();
+    const numPlayers = 1 + bots;
+    const botSpecs: MatchBot[] = [];
+    for (let slot = 1; slot <= bots; slot++) {
+      const brain: IBotController = moduleForSlot(slot, mapKind).createBot(
+        seed,
+        slot,
+        effectiveSpec(mapKind),
+      );
+      botSpecs.push({ slot, brain });
     }
-    restartScheduled = false;
-    // Re-roll first so buildBots() and createInitialState() see the new seed.
-    seed = randomSeed();
-    botControllers = buildBots();
-    // FFA: team = slot. 2v2: diagonal teams [0,1,1,0].
-    cur = createInitialState(seed, feel, 1 + effectiveBots(), {
-      pvp: true,
-      map: mapKind,
-      teams: teamsForFormat(),
-      spawnOrder: spawnOrderFromSeed(seed),
-    });
-    prev = cur;
-    lossRecorder.start(
+    // Manual per-slot teams (first numPlayers entries). Omit when they equal the
+    // default [0,1,…] so an untouched FFA solo match stays byte-identical.
+    const slotTeams = teams.slice(0, numPlayers);
+    const isDefault = slotTeams.every((t, i) => t === i);
+    const start: MatchStartMsg = {
+      type: MsgType.MATCH_START,
       seed,
-      mapKind,
-      1 + effectiveBots(),
-      explicitTeams(),
-      spawnOrderFromSeed(seed).slice(0, 1 + effectiveBots()),
-    );
-    // Render-layer only: refresh HUD labels/hint so a changed bot count shows.
+      slot: 0, // human is always slot 0 in solo
+      config: feel,
+      t0: 0,
+      map: mapKind,
+      ...(isDefault ? {} : { teams: slotTeams }),
+    };
     renderer.setSlotLabels(buildSlotLabels());
     renderer.setHudHint(buildHint(), true);
-    acc = 0;
+    return { start, numPlayers, bots: botSpecs };
   };
+
+  const transport = new LoopbackTransport(0);
+  const initial = rebuild();
+  const runner = new MatchRunner({
+    transport,
+    start: initial.start,
+    numPlayers: initial.numPlayers,
+    bots: initial.bots,
+    renderer,
+    keyboard,
+    countdown: true,
+    autoRestart: true, // R + ~2.5s after OVER → a fresh random match
+    rebuild,
+    record: 'aiLoss', // persist + log a replay when the human (vs AI) wins
+    showMuteButton: false, // main.ts keeps its own candy-styled mute button
+  });
+
+  /** Start a NEW random match (R-reset / feel apply / map change / auto-restart). */
+  const reset = (): void => runner.restart();
 
   // Unlock audio on first user gesture.
   const unlockAudio = (): void => {
@@ -349,11 +282,10 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     soundHint.style.display = 'none';
   };
 
-  // R = reset: start a new random match (fresh seed).
-  window.addEventListener('keydown', (e: KeyboardEvent) => {
-    unlockAudio();
-    if (e.code === 'KeyR') reset();
-  });
+  // First key/click hides the sound hint + unlocks audio. R-to-restart is owned
+  // by the MatchRunner (autoRestart) so it isn't handled here (avoids a double
+  // restart); this listener is purely the audio-unlock UI cue.
+  window.addEventListener('keydown', unlockAudio);
   window.addEventListener('click', unlockAudio, { once: false });
 
   // Mute toggle button.
@@ -411,44 +343,51 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   }
   botPicker.addEventListener('change', () => {
     bots = Math.max(0, Math.min(3, Math.trunc(Number(botPicker.value))));
+    renderTeamPickers(); // active-slot count changed → re-render team selects
     reset();
   });
   document.body.appendChild(botPicker);
 
-  // Solo team-format picker (third row, below the bot-count picker). 2v2 forces
-  // a fixed 4-player diagonal-team match and disables the bot-count picker.
-  const formatPicker = document.createElement('select');
-  formatPicker.style.cssText =
-    'position:fixed;top:80px;left:8px;z-index:900;padding:6px 12px;' +
-    'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
-    "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
-  const formatOptions: ReadonlyArray<readonly [TeamFormat, string]> = [
-    ['ffa', 'Free For All'],
-    ['2v2', '2v2 Team'],
-  ];
-  for (const [value, label] of formatOptions) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    if (value === format) opt.selected = true;
-    formatPicker.appendChild(opt);
-  }
-  // Reflect format → bot-picker enabled state (greyed + disabled in 2v2 since
-  // the count is forced to 3). Applied at init and on every format change.
-  const syncBotPicker = (): void => {
-    const disabled = format === '2v2';
-    botPicker.disabled = disabled;
-    botPicker.style.opacity = disabled ? '0.4' : '1';
+  // Solo per-slot TEAM pickers (third row): one tiny colour <select> per active
+  // slot (you = slot 0, bots = 1..N). Manual teams — picking a colour groups
+  // teammates (consistent with the net/offline rooms; you are always host).
+  // Re-rendered when the bot count changes; a change rebuilds the match.
+  const teamRow = document.createElement('div');
+  teamRow.style.cssText =
+    'position:fixed;top:80px;left:8px;z-index:900;display:flex;gap:6px;align-items:center;';
+  const TEAM_LABELS = ['🍓', '🍃', '🍮', '🫐']; // 4 team colours (palette 0..3)
+  const renderTeamPickers = (): void => {
+    teamRow.textContent = '';
+    const tag = document.createElement('span');
+    tag.style.cssText =
+      "font:700 12px 'Nunito',system-ui,sans-serif;color:#7A4A2B;" +
+      'background:#fff;padding:6px 8px;border-radius:999px;box-shadow:0 4px 0 #EAD6B8;';
+    tag.textContent = '隊伍';
+    teamRow.appendChild(tag);
+    for (let slot = 0; slot <= bots; slot++) {
+      const sel = document.createElement('select');
+      sel.style.cssText =
+        'padding:6px 8px;background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+        "box-shadow:0 4px 0 #EAD6B8;font:700 12px 'Nunito',system-ui,sans-serif;cursor:pointer;";
+      sel.title = slot === 0 ? '你的隊伍' : `Bot ${slot} 的隊伍`;
+      for (let t = 0; t < TEAM_LABELS.length; t++) {
+        const opt = document.createElement('option');
+        opt.value = String(t);
+        opt.textContent = `${slot === 0 ? 'YOU' : `B${slot}`} ${TEAM_LABELS[t]}`;
+        if (teams[slot] === t) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.addEventListener('change', () => {
+        teams[slot] = Math.max(0, Math.min(3, Math.trunc(Number(sel.value))));
+        reset();
+      });
+      teamRow.appendChild(sel);
+    }
   };
-  formatPicker.addEventListener('change', () => {
-    format = parseFormat(formatPicker.value);
-    syncBotPicker();
-    reset();
-  });
-  document.body.appendChild(formatPicker);
-  syncBotPicker();
+  renderTeamPickers();
+  document.body.appendChild(teamRow);
 
-  // Solo bot-strength picker (fourth row, below the format picker). One dropdown
+  // Solo bot-strength picker (fourth row, below the team pickers). One dropdown
   // strong → weak: 'Champion' uses the current map's champion archetype (stays
   // map-reactive via reset() → effectiveSpec(mapKind)); the difficulty tiers run
   // a generic bot on that DIFFICULTY_PRESETS tier. Disabled when ?strategy= is
@@ -476,9 +415,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     reset();
   });
   document.body.appendChild(strengthPicker);
-  // Grey + disable when an explicit ?strategy= override is controlling the bots,
-  // mirroring syncBotPicker's disable pattern. Static (explicitStrategy is fixed
-  // for the session), so applied once here.
+  // Grey + disable when an explicit ?strategy= override is controlling the bots.
+  // Static (explicitStrategy is fixed for the session), so applied once here.
   if (explicitStrategy) {
     strengthPicker.disabled = true;
     strengthPicker.style.opacity = '0.4';
@@ -494,7 +432,9 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   soundHint.textContent = 'Click anywhere to enable sound';
   document.body.appendChild(soundHint);
 
-  // Feel-params panel (hotseat only; see the header comment).
+  // Feel-params panel (hotseat only; see the header comment). Applying it swaps
+  // the feel, then restarts the match (an R-reset, never a mid-match swap) — the
+  // rebuild factory reads the new `feel`.
   const feelPanel = new FeelPanel();
   feelPanel.onApply = (next) => {
     feel = next;
@@ -502,44 +442,8 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   };
   document.body.appendChild(feelPanel.root);
 
-  const frame = (now: number): void => {
-    const dt = last === undefined ? 0 : Math.min(now - last, MAX_FRAME_MS);
-    last = now;
-    acc += dt;
-
-    let steps = 0;
-    while (acc >= TICK_MS && steps < MAX_TICKS_PER_FRAME) {
-      const inputs: InputFrame[] = [sampleLocalInput(keyboard)];
-      for (let slot = 1; slot <= effectiveBots(); slot++) {
-        const c = botControllers[slot - 1];
-        inputs.push(c ? c.sample(cur, slot) : NO_INPUT);
-      }
-      const prevTick = cur;
-      prev = cur;
-      cur = tick(cur, inputs);
-      lossRecorder.tick(prevTick.tick, inputs, prevTick, cur);
-      matchSound.tick(prevTick, cur);
-      acc -= TICK_MS;
-      steps += 1;
-    }
-    // Hit the per-frame tick cap → drop the leftover backlog so it can't snowball
-    // into an even longer next frame (see MAX_TICKS_PER_FRAME).
-    if (acc >= TICK_MS) acc = 0;
-
-    // Auto-restart: once the match is OVER (last team standing), schedule a
-    // fresh random match after ~2.5s. Fires once per match; reset() clears the
-    // guard so the next match auto-restarts too.
-    if (cur.phase === GamePhase.OVER && !restartScheduled) {
-      restartScheduled = true;
-      const lossSummary = lossRecorder.finishIfAiLost(cur);
-      if (lossSummary !== null) console.log(lossSummary);
-      restartTimer = setTimeout(reset, 2500);
-    }
-
-    renderer.render(prev, cur, acc / TICK_MS);
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
+  // The MatchRunner (constructed above) owns the rAF loop, countdown, recorder
+  // and auto-restart; nothing left to drive here.
 }
 
 const params = new URLSearchParams(window.location.search);

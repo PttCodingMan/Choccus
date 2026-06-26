@@ -145,6 +145,16 @@ export class NetLobby {
     this.client.removeBot(slot);
   }
 
+  /** Host-only map pick (relay ignores non-hosts). */
+  setRoomSettings(map: string): void {
+    this.client.setRoomSettings(map);
+  }
+
+  /** Set a slot's team (host: any slot; non-host: own only — relay enforced). */
+  setPlayerTeam(slot: number, team: number): void {
+    this.client.setPlayerTeam(slot, team);
+  }
+
   private setPhase(phase: NetLobbyPhase): void {
     if (this.phase === phase) return;
     this.phase = phase;

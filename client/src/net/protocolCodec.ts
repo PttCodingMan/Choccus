@@ -18,11 +18,16 @@ import type {
   InputBroadcastMsg,
   LeaderboardEntry,
   LeaderboardMsg,
+  MapKind,
   MatchStartMsg,
   PlayerDisconnectMsg,
+  ReplayTick,
+  ReplayUploadMsg,
   RoomPlayer,
   RoomStateMsg,
   ServerMsg,
+  SetPlayerTeamMsg,
+  SetRoomSettingsMsg,
   SlotInput,
   StallNoticeMsg,
   TickReadyMsg,
@@ -36,11 +41,16 @@ export type {
   InputBroadcastMsg,
   LeaderboardEntry,
   LeaderboardMsg,
+  MapKind,
   MatchStartMsg,
   PlayerDisconnectMsg,
+  ReplayTick,
+  ReplayUploadMsg,
   RoomPlayer,
   RoomStateMsg,
   ServerMsg,
+  SetPlayerTeamMsg,
+  SetRoomSettingsMsg,
   SlotInput,
   StallNoticeMsg,
   TickReadyMsg,
@@ -128,6 +138,36 @@ export function buildGetLeaderboard(limit: number): Uint8Array {
   return encodeMsg(MsgType.GET_LEADERBOARD, { limit });
 }
 
+/** SetRoomSettingsMsg — host's map pick (relay ignores non-hosts). */
+export function buildSetRoomSettings(map: string): Uint8Array {
+  return encodeMsg(MsgType.SET_ROOM_SETTINGS, { map });
+}
+
+/** SetPlayerTeamMsg — manual per-slot team (host: any slot; non-host: own only). */
+export function buildSetPlayerTeam(slot: number, team: number): Uint8Array {
+  return encodeMsg(MsgType.SET_PLAYER_TEAM, { slot, team });
+}
+
+/**
+ * ReplayUploadMsg — a self-contained match replay (seed + map + teams + dense
+ * per-tick inputs + frozen config), uploaded by the loser at OVER. The payload
+ * is built from plain objects/arrays/numbers so MessagePack carries it as-is;
+ * Phase 2b adds the relay-side storage that consumes it.
+ */
+export function buildReplayUpload(replay: Omit<ReplayUploadMsg, 'type'>): Uint8Array {
+  return encodeMsg(MsgType.REPLAY_UPLOAD, {
+    seed: replay.seed,
+    map: replay.map,
+    teams: replay.teams,
+    numPlayers: replay.numPlayers,
+    t0: replay.t0,
+    config: replay.config,
+    inputs: replay.inputs,
+    result: replay.result,
+    winnerTeam: replay.winnerTeam,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Server → Client typed decode
 // ---------------------------------------------------------------------------
@@ -142,14 +182,20 @@ export function buildGetLeaderboard(limit: number): Uint8Array {
 export function decodeServerMsg(data: Uint8Array): ServerMsg {
   const { type, payload: p } = decodeMsg(data);
   switch (type) {
-    case MsgType.ROOM_STATE:
+    case MsgType.ROOM_STATE: {
+      // map is optional (older relays omit it → client defaults to classic).
+      // Per-slot teams ride on each RoomPlayer.team. Only attach map when present
+      // so undefined never leaks onto the decoded message.
+      const rsMap = p['map'];
       return {
         type: MsgType.ROOM_STATE,
         roomId: p['roomId'] as string,
         phase: p['phase'] as GamePhase,
         youSlot: p['youSlot'] as number,
         players: p['players'] as RoomPlayer[],
+        ...(typeof rsMap === 'string' ? { map: rsMap as MapKind } : {}),
       } satisfies RoomStateMsg;
+    }
     case MsgType.MATCH_START: {
       // Decode config field-by-field so each wire field name appears explicitly
       // at the boundary — a rename in shared/protocol.ts then fails to compile
@@ -160,12 +206,19 @@ export function decodeServerMsg(data: Uint8Array): ServerMsg {
         cornerAssist: c['cornerAssist'] as number,
         inputBufferMs: c['inputBufferMs'] as number,
       };
+      // map/teams are optional (the relay omits them today → classic + team=slot
+      // defaults inside the engine). Only attach them when present so an
+      // undefined value never leaks onto the wire-decoded message.
+      const map = p['map'];
+      const teams = p['teams'];
       return {
         type: MsgType.MATCH_START,
         seed: p['seed'] as number,
         slot: p['slot'] as number,
         config,
         t0: p['t0'] as number,
+        ...(typeof map === 'string' ? { map: map as MapKind } : {}),
+        ...(Array.isArray(teams) ? { teams: teams as number[] } : {}),
       } satisfies MatchStartMsg;
     }
     case MsgType.INPUT_BROADCAST:

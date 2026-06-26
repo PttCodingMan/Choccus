@@ -38,7 +38,7 @@ import {
   makeFeelParams,
 } from '../../../client/src/config/FeelParams';
 import { NO_INPUT, type InputFrame } from '../../../client/src/sim/InputBuffer';
-import { type MapKind } from '../../../client/src/sim/Map';
+import { MAP_KINDS, spawnOrderFromSeed, type MapKind } from '../../../client/src/sim/Map';
 import {
   type SimState,
   createInitialState,
@@ -104,8 +104,8 @@ export function validateReplay(replay: Replay): void {
       throw new Error('replay.teams must be numPlayers non-negative integers');
     }
   }
-  if (replay.map !== undefined && replay.map !== 'classic' && replay.map !== 'pirate') {
-    throw new Error("replay.map must be 'classic' or 'pirate'");
+  if (replay.map !== undefined && !MAP_KINDS.includes(replay.map)) {
+    throw new Error(`replay.map must be one of: ${MAP_KINDS.join(', ')}`);
   }
   if (replay.spawnOrder !== undefined) {
     const so = replay.spawnOrder;
@@ -188,9 +188,92 @@ export function runReplay(
   return log;
 }
 
-/** Load + validate a replay JSON file. */
+/**
+ * The relay-side replay-upload document (mirror of shared/protocol.ts
+ * ReplayUploadMsg + the provenance the relay stamps on write). The relay stores
+ * it as-is; `replayFromUpload` converts it into the sparse Replay above so
+ * `npm run replay -- replays/<file>.json` can run an uploaded match.
+ */
+export interface ReplayUploadDoc {
+  /** Schema tag the relay writes so the loader can detect this format. */
+  schema: 'choccus-replay-upload-v1';
+  seed: number;
+  map: MapKind;
+  teams: number[];
+  numPlayers: number;
+  /** First sim tick (net matches always 0; the runner starts from tick 0). */
+  t0: number;
+  config: Partial<FeelParams>;
+  /** Dense, contiguous per-tick inputs (one {dirs,actions} per slot). */
+  inputs: Array<{ t: number; slots: Array<{ dirs: number; actions: number }> }>;
+  result?: 'win' | 'loss' | 'draw';
+  winnerTeam?: number | null;
+  /** Server wall-clock ISO timestamp (provenance only). */
+  uploadedAt?: string;
+}
+
+/** Type guard: an uploaded (dense) replay doc vs the authored (sparse) Replay. */
+function isUploadDoc(doc: unknown): doc is ReplayUploadDoc {
+  return (
+    typeof doc === 'object' &&
+    doc !== null &&
+    (doc as { schema?: unknown }).schema === 'choccus-replay-upload-v1'
+  );
+}
+
+/**
+ * Convert a relay-stored upload (dense inputs) into the sparse Replay the runner
+ * consumes. Dense → sparse: emit one event per slot only when its {dir,action}
+ * changes from the previous tick (persist-until-changed). spawnOrder is derived
+ * deterministically from the seed (net/solo matches shuffle spawns), so the
+ * fixture reproduces the match bit-for-bit. The upload's t0 must be 0 (net
+ * matches start there; the runner has no tick offset).
+ */
+export function replayFromUpload(doc: ReplayUploadDoc): Replay {
+  if (doc.t0 !== 0) {
+    throw new Error(`upload.t0 must be 0 (got ${doc.t0}); the runner starts at tick 0`);
+  }
+  const n = doc.numPlayers;
+  const events: ReplayInputEvent[] = [];
+  // Track the last emitted frame per slot; NO_INPUT is the implicit start.
+  const last: Array<{ dir: number; action: number }> = Array.from(
+    { length: n },
+    () => ({ dir: NO_INPUT.dir, action: NO_INPUT.action }),
+  );
+  for (const frame of doc.inputs) {
+    const slots = frame.slots;
+    for (let s = 0; s < n; s++) {
+      const wire = slots[s];
+      if (wire === undefined) continue;
+      if (wire.dirs !== last[s]!.dir || wire.actions !== last[s]!.action) {
+        events.push({ tick: frame.t, slot: s, dir: wire.dirs, action: wire.actions });
+        last[s] = { dir: wire.dirs, action: wire.actions };
+      }
+    }
+  }
+  const replay: Replay = {
+    name: `upload ${doc.uploadedAt ?? ''}`.trim(),
+    description: `relay upload (result=${doc.result ?? '?'} winnerTeam=${
+      doc.winnerTeam ?? 'null'
+    })`,
+    seed: doc.seed >>> 0,
+    feelParams: doc.config,
+    numPlayers: n,
+    teams: doc.teams,
+    map: doc.map,
+    spawnOrder: spawnOrderFromSeed(doc.seed >>> 0).slice(0, n),
+    ticks: doc.inputs.length,
+    inputs: events,
+  };
+  validateReplay(replay);
+  return replay;
+}
+
+/** Load + validate a replay JSON file (authored sparse OR relay upload). */
 export function loadReplayFile(path: string): Replay {
-  const replay = JSON.parse(readFileSync(path, 'utf8')) as Replay;
+  const doc: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (isUploadDoc(doc)) return replayFromUpload(doc);
+  const replay = doc as Replay;
   validateReplay(replay);
   return replay;
 }

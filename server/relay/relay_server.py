@@ -21,10 +21,12 @@ from .constants import (
     MAX_NAME_LEN,
     MAX_PLAYER_ID_LEN,
     MAX_ROOM_ID_LEN,
+    MAX_ROOM_SETTING_LEN,
 )
 from .lobby import Lobby
 from .protocol import MsgType, decode, leaderboard
 from .ratings import RatingStore
+from .replays import store_replay
 
 
 def _log(msg: str) -> None:
@@ -105,6 +107,12 @@ class RelayServer:
             self._input(conn, payload)
         elif type_id == MsgType.HASH_REPORT:
             self._hash(conn, payload)
+        elif type_id == MsgType.REPLAY_UPLOAD:
+            self._replay_upload(conn, payload)
+        elif type_id == MsgType.SET_ROOM_SETTINGS:
+            self._set_room_settings(conn, payload)
+        elif type_id == MsgType.SET_PLAYER_TEAM:
+            self._set_player_team(conn, payload)
         else:
             _log(f"unknown message type 0x{type_id:02x}")
 
@@ -200,6 +208,33 @@ class RelayServer:
             _log(f"room {room.room_id}: bot removed from slot {slot}")
             room.broadcast_room_state()
 
+    def _set_room_settings(self, conn: Connection, payload: dict) -> None:
+        room, slot = conn.room, conn.slot
+        if room is None or slot is None:
+            return
+        # Cap the untrusted string before the room validates it against MAP_KINDS
+        # (an unknown map is then silently ignored). Host-only is enforced in set_map.
+        map_ = str(payload.get("map", ""))[:MAX_ROOM_SETTING_LEN]
+        if room.set_map(slot, map_):
+            _log(f"room {room.room_id}: map → {room.map}")
+            room.broadcast_room_state()
+
+    def _set_player_team(self, conn: Connection, payload: dict) -> None:
+        room, slot = conn.room, conn.slot
+        if room is None or slot is None:
+            return
+        try:
+            target = int(payload["slot"])
+            team = int(payload["team"])
+        except (KeyError, TypeError, ValueError):
+            _log("malformed SetPlayerTeam ignored")
+            return
+        # Permissions (host: any slot; non-host: own slot only) + bounds are
+        # enforced in set_player_team; a rejected change broadcasts nothing.
+        if room.set_player_team(slot, target, team):
+            _log(f"room {room.room_id}: slot {target} → team {team}")
+            room.broadcast_room_state()
+
     def _match_result(self, conn: Connection, payload: dict) -> None:
         room, slot = conn.room, conn.slot
         if room is None or slot is None:
@@ -246,3 +281,17 @@ class RelayServer:
             _log("malformed HashReport ignored")
             return
         room.coordinator.on_hash(slot, t, hash_)
+
+    def _replay_upload(self, conn: Connection, payload: dict) -> None:
+        """Store a loser's self-contained match replay to disk for analysis.
+
+        UNTRUSTED: store_replay() validates + bounds every field (tick/slot caps)
+        and drops over-cap / malformed payloads (returns None) without raising, so
+        a bad upload can never OOM the relay or crash the room. The written doc is
+        consumable by `npm run replay -- replays/<file>.json` (the sim-runner
+        converts the dense upload into a fixture)."""
+        path = store_replay(payload)
+        if path is None:
+            _log("ReplayUpload rejected (over-cap / malformed)")
+            return
+        _log(f"replay stored: {path}")

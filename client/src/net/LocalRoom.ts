@@ -2,58 +2,32 @@
  * Offline waiting-room: the "create a room, add bots, play — no relay" half of
  * the unified lobby. It reuses LobbyUI's room view (a dumb, RoomState-driven
  * screen) by feeding it synthetic snapshots and routing the room callbacks here
- * instead of to the relay; on start it runs a fully local match via
- * runLocalMatch (client-side sim + bots, no server). Humans-vs-humans still goes
- * through the relay (netMode); this is purely the alone-vs-bots path.
+ * instead of to the relay; on start it runs a fully local match through the
+ * unified MatchRunner driven by an in-process LoopbackTransport (the same
+ * LockstepEngine as net, client-side sim + bots, no server). Humans-vs-humans
+ * still goes through the relay (netMode); this is purely the alone-vs-bots path.
  *
- * MVP scope (#1): FFA on the classic map, add/remove bots, start, return. The
- * host settings (map / 1v2·1v3·2v2 / strength) and seat-colour picking layer on
- * top in later tasks (#2/#3); the match runner already takes arbitrary teams.
+ * Teams are MANUAL per-slot: you are always the host here, so clicking any
+ * roster card (yours or a bot's) cycles that slot's team colour. Default =
+ * team[slot] = slot (FFA). The map picker + bots + strength layer on top; the
+ * resulting per-slot teams feed the loopback MatchStart.
  */
 import { GamePhase } from '../../../shared/types';
 import { AI_VERSIONS, type BotSpec, type IBotController } from '../ai';
 import { asTier, botForTier } from '../ai/botDifficulty';
 import { makeFeelParams } from '../config/FeelParams';
+import { KeyboardInput } from '../input/KeyboardInput';
 import { Renderer } from '../render/Renderer';
 import { MAP_KINDS, type MapKind } from '../sim/Map';
-import { type LocalMatchConfig, type LocalMatchHandle, runLocalMatch } from '../solo/localMatch';
+import { LoopbackTransport } from './LoopbackTransport';
+import { MatchRunner, type MatchBot, type MatchSpec } from './MatchRunner';
 import type { LobbyUI } from './LobbyUI';
-import { MsgType, type RoomStateMsg } from './protocolCodec';
+import { MsgType, type MatchStartMsg, type RoomStateMsg } from './protocolCodec';
+
+const randomSeed = (): number => Math.floor(Math.random() * 0x1_0000_0000) >>> 0;
 
 const MAX_SLOTS = 4;
 const HUMAN_SLOT = 0;
-
-/** Team format → fixed bot count required (null = FFA, any count ≥1). */
-type Format = 'ffa' | '1v2' | '1v3' | '2v2';
-const FORMAT_LABEL: Record<Format, string> = {
-  ffa: 'Free For All',
-  '1v2': '1 vs 2',
-  '1v3': '1 vs 3',
-  '2v2': '2v2',
-};
-function requiredBots(format: Format): number | null {
-  return format === 'ffa' ? null : format === '1v2' ? 2 : 3;
-}
-
-/** Per-slot team/palette ids (compacted: human slot 0, bots slots 1..n). The
- *  team id IS the body-palette index (teamPalette), so the human shows their
- *  chosen `color`; teammates share it and the enemy side takes a distinct hue.
- *  FFA gives every player a distinct colour (still all-vs-all). */
-function teamsForColor(format: Format, color: number, numBots: number): readonly number[] {
-  const enemy = (color + 2) % 4; // opposite-ish hue, visually distinct
-  switch (format) {
-    case 'ffa': {
-      const others = [0, 1, 2, 3].filter((c) => c !== color);
-      return [color, ...Array.from({ length: numBots }, (_, i) => others[i % others.length]!)];
-    }
-    case '1v2':
-      return [color, enemy, enemy];
-    case '1v3':
-      return [color, enemy, enemy, enemy];
-    case '2v2':
-      return [color, enemy, enemy, color]; // you + slot-3 ally vs slots 1,2
-  }
-}
 
 /** Short HUD label for a bot tier, e.g. "Hunter v6". */
 function botLabel(difficulty: string, map: MapKind): string {
@@ -77,14 +51,15 @@ export class LocalRoom {
 
   /** slot -> bot difficulty tier ('easy' | 'normal' | 'hard'). */
   private readonly bots = new Map<number, string>();
-  /** Host settings (room pickers). */
+  /** Host map pick. */
   private map: MapKind = 'classic';
-  private format: Format = 'ffa';
-  /** The player's chosen body-palette index (= their team colour). */
-  private color = 0;
+  /** MANUAL per-slot team assignment: slot -> team (= colour index). Default for
+   *  a slot = its own index (FFA). Cycled by clicking a roster card. */
+  private readonly teams = new Map<number, number>([[HUMAN_SLOT, HUMAN_SLOT]]);
 
   private renderer: Renderer | null = null;
-  private match: LocalMatchHandle | null = null;
+  private match: MatchRunner | null = null;
+  private keyboard: KeyboardInput | null = null;
   private readonly exitBtn: HTMLButtonElement;
 
   constructor(opts: LocalRoomOptions) {
@@ -105,10 +80,22 @@ export class LocalRoom {
     document.body.appendChild(this.exitBtn);
   }
 
-  /** RoomStateMsg snapshot driving LobbyUI.showRoom (host = slot 0). */
+  /** Team for a slot (default = the slot index, FFA). */
+  private team(slot: number): number {
+    return this.teams.get(slot) ?? slot;
+  }
+
+  /** RoomStateMsg snapshot driving LobbyUI.showRoom (host = slot 0). Each entry
+   *  carries its manual team so the roster cards render the right colours. */
   private snapshot(): RoomStateMsg {
     const players = [
-      { slot: HUMAN_SLOT, name: this.name, ready: false, connected: true, color: this.color },
+      {
+        slot: HUMAN_SLOT,
+        name: this.name,
+        ready: false,
+        connected: true,
+        team: this.team(HUMAN_SLOT),
+      },
       ...[...this.bots.entries()].map(([slot, difficulty]) => ({
         slot,
         name: 'CocoaBot',
@@ -116,6 +103,7 @@ export class LocalRoom {
         connected: true,
         isBot: true,
         botDifficulty: difficulty,
+        team: this.team(slot),
       })),
     ];
     return {
@@ -127,18 +115,14 @@ export class LocalRoom {
     };
   }
 
-  /** Render the room view + the host-settings row (offline-only). */
+  /** Render the room view + the host map picker. You are always host here, so
+   *  every roster card is team-editable (LobbyUI's default predicate). */
   private render(): void {
+    this.ui.setTeamEditable(() => true);
     this.ui.showRoom(this.snapshot());
-    this.ui.setHostSettings({ map: this.map, format: this.format, color: this.color });
-    // Proactively flag a fixed-format bot-count mismatch (showRoom set a generic
-    // status; override it so the host knows how many bots the format wants).
-    const req = requiredBots(this.format);
-    if (req !== null && this.bots.size !== req) {
-      this.ui.setRoomStatus(
-        `${FORMAT_LABEL[this.format]} 需要 ${req} 個 Bot（目前 ${this.bots.size}）`,
-      );
-    }
+    // Offline: the swatch picker sets the HUMAN's own colour (= team), aligning
+    // with the card-click model (it's a shortcut for cycling your own card).
+    this.ui.setHostSettings({ map: this.map, color: this.team(HUMAN_SLOT) });
   }
 
   /** Show the room view. */
@@ -149,11 +133,15 @@ export class LocalRoom {
   addBot(slot: number, difficulty: string): void {
     if (slot === HUMAN_SLOT || slot < 0 || slot >= MAX_SLOTS) return;
     this.bots.set(slot, difficulty);
+    if (!this.teams.has(slot)) this.teams.set(slot, slot); // default team = slot
     this.render();
   }
 
   removeBot(slot: number): void {
-    if (this.bots.delete(slot)) this.render();
+    if (this.bots.delete(slot)) {
+      this.teams.delete(slot);
+      this.render();
+    }
   }
 
   setMap(map: string): void {
@@ -163,18 +151,18 @@ export class LocalRoom {
     }
   }
 
-  setFormat(format: string): void {
-    if (format === 'ffa' || format === '1v2' || format === '1v3' || format === '2v2') {
-      this.format = format;
-      this.render();
-    }
+  /** Manual team set for a slot (you are host → any occupied slot). team =
+   *  colour index 0..MAX_SLOTS-1; ignored for empty slots. */
+  setPlayerTeam(slot: number, team: number): void {
+    if (!Number.isInteger(team) || team < 0 || team >= MAX_SLOTS) return;
+    if (slot !== HUMAN_SLOT && !this.bots.has(slot)) return; // not an occupied slot
+    this.teams.set(slot, team);
+    this.render();
   }
 
+  /** Offline colour swatch = set the HUMAN's own team colour. */
   setColor(color: number): void {
-    if (Number.isInteger(color) && color >= 0 && color < 4) {
-      this.color = color;
-      this.render();
-    }
+    this.setPlayerTeam(HUMAN_SLOT, color);
   }
 
   /** Leave the room entirely (back to landing). */
@@ -187,6 +175,7 @@ export class LocalRoom {
   dispose(): void {
     this.match?.stop();
     this.match = null;
+    this.keyboard = null;
     this.exitBtn.remove();
     if (this.renderer !== null) {
       this.renderer.canvas.remove();
@@ -196,57 +185,79 @@ export class LocalRoom {
 
   /** Start the local match (the room's "Ready" = start, since nobody to wait on).
    *  Needs at least one bot opponent. Slots are compacted to 0..n-1 so a bot
-   *  added to a non-adjacent seat never leaves an inert gap player. */
+   *  added to a non-adjacent seat never leaves an inert gap player; each player's
+   *  manual team rides along with its compacted slot. */
   async start(): Promise<void> {
     if (this.match !== null) return; // already playing
-    const tiers = [...this.bots.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, difficulty]) => difficulty);
-    if (tiers.length === 0) {
+    const botEntries = [...this.bots.entries()].sort((a, b) => a[0] - b[0]);
+    if (botEntries.length === 0) {
       this.ui.setRoomStatus('加一個 Bot 才能開始');
       return;
     }
-    // Fixed formats need an exact bot count; FFA takes any.
-    const req = requiredBots(this.format);
-    if (req !== null && tiers.length !== req) {
-      this.ui.setRoomStatus(`${FORMAT_LABEL[this.format]} 需要 ${req} 個 Bot（目前 ${tiers.length}）`);
-      return;
-    }
+    const tiers = botEntries.map(([, difficulty]) => difficulty);
 
     const numPlayers = 1 + tiers.length;
-    const config: LocalMatchConfig = {
-      map: this.map,
-      feel: makeFeelParams(),
-      numPlayers,
-      teams: teamsForColor(this.format, this.color, tiers.length),
-      buildBots: (seed): ReadonlyArray<IBotController | null> => {
-        const arr: (IBotController | null)[] = new Array(numPlayers).fill(null);
-        tiers.forEach((difficulty, i) => {
-          const slot = i + 1; // human is slot 0
-          const rung = botForTier(asTier(difficulty), this.map);
-          const spec: BotSpec = { difficulty: 'champion', strategyRaw: rung.archetype };
-          arr[slot] = AI_VERSIONS[rung.version]!.createBot(seed, slot, spec);
-        });
-        return arr;
-      },
-      slotLabels: ['YOU', ...tiers.map((d) => botLabel(d, this.map))],
-      hudHint: `Solo +${tiers.length} — 方向鍵移動 · 空白鍵放巧克力 · R 重新開始 · Esc 離開`,
-      botSlots: new Set(tiers.map((_, i) => i + 1)),
-      humanSlot: HUMAN_SLOT,
-    };
+    // Compacted per-slot teams: human at compacted slot 0, bots at 1..n in
+    // sorted order; each keeps the team it was assigned in the room view.
+    const teams: number[] = [this.team(HUMAN_SLOT)];
+    for (const [origSlot] of botEntries) teams.push(this.team(origSlot));
+    const feel = makeFeelParams();
 
     if (this.renderer === null) {
       this.renderer = await Renderer.create();
       this.mount.appendChild(this.renderer.canvas);
     }
-    this.renderer.canvas.style.display = '';
+    const renderer = this.renderer;
+    renderer.canvas.style.display = '';
     this.ui.showMatch();
     this.exitBtn.style.display = '';
     window.addEventListener('keydown', this.onEscape);
 
-    this.match = runLocalMatch(this.renderer, config, {
+    // Build the next match spec from the host settings; re-rolls the seed each
+    // time (auto-restart / R). Bots are pre-built deterministic brains per slot
+    // (local loopback path → caller supplies the exact controller, like solo).
+    // HUD labels/bot-slots are refreshed here so every fresh match shows them.
+    const rebuild = (): MatchSpec => {
+      const seed = randomSeed();
+      const bots: MatchBot[] = tiers.map((difficulty, i) => {
+        const slot = i + 1; // human is slot 0
+        const rung = botForTier(asTier(difficulty), this.map);
+        const spec: BotSpec = { difficulty: 'champion', strategyRaw: rung.archetype };
+        const brain: IBotController = AI_VERSIONS[rung.version]!.createBot(seed, slot, spec);
+        return { slot, brain };
+      });
+      const start: MatchStartMsg = {
+        type: MsgType.MATCH_START,
+        seed,
+        slot: HUMAN_SLOT,
+        config: feel,
+        t0: 0,
+        map: this.map,
+        teams: teams.slice(),
+      };
+      renderer.setSlotLabels(['YOU', ...tiers.map((d) => botLabel(d, this.map))]);
+      renderer.setHudHint(
+        `Solo +${tiers.length} — 方向鍵移動 · 空白鍵放巧克力 · R 重新開始 · Esc 離開`,
+        true,
+      );
+      renderer.setBotSlots(new Set(tiers.map((_, i) => i + 1)));
+      return { start, numPlayers, bots };
+    };
+
+    const transport = new LoopbackTransport(HUMAN_SLOT);
+    this.keyboard = new KeyboardInput();
+    const initial = rebuild();
+    this.match = new MatchRunner({
+      transport,
+      start: initial.start,
+      numPlayers: initial.numPlayers,
+      bots: initial.bots,
+      renderer,
+      keyboard: this.keyboard,
+      countdown: true,
       autoRestart: true, // plays like solo until the player leaves
-      recordLoss: false,
+      rebuild,
+      record: 'none',
     });
   }
 
@@ -260,9 +271,10 @@ export class LocalRoom {
     if (this.match === null) return;
     this.match.stop();
     this.match = null;
+    this.keyboard = null;
     window.removeEventListener('keydown', this.onEscape);
     this.exitBtn.style.display = 'none';
     if (this.renderer !== null) this.renderer.canvas.style.display = 'none';
-    this.ui.showRoom(this.snapshot());
+    this.render();
   }
 }

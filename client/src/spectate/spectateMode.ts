@@ -3,34 +3,36 @@
  * with NO human player. Purely additive: ?mode=solo and the online/net path are
  * untouched.
  *
- * Like solo mode, the spectator owns ALL wall-clock timing via a rAF loop with a
- * fixed-timestep accumulator; the sim only ever receives whole ticks built from
- * each slot's bot controller. A SPEED multiplier runs `speed` sim-ticks per
- * TICK_MS of accumulated time so a match can be watched faster. Rendering
- * interpolates between the last two states with alpha = acc / TICK_MS.
- *
- * Every slot is a bot, so no keyboard input ever enters the sim. Math.random()
- * is used ONLY to pick the per-match seed (exactly as solo mode documents); the
- * simulation given that seed stays fully deterministic.
+ * Like solo and net, the spectator runs through the SAME LockstepEngine, driven
+ * by an in-process LoopbackTransport wrapped by the unified MatchRunner. Every
+ * slot is a bot: the runner's nominal local slot (0) is also a bot slot, so the
+ * loopback's echoed NO_INPUT is ignored and slot 0's bot brain fills it — no
+ * keyboard input ever enters the sim. Math.random() picks the per-match seed
+ * only (exactly as solo documents); the sim given that seed stays deterministic.
  *
  * Match config comes from URL params (all with sensible defaults):
  *   ?lineup=2-chaosv,1-gambler  one VERSION-ARCHETYPE token per slot (2..4)
  *   ?map=classic|pirate         arena layout (default classic)
- *   ?speed=1|2|4|8              sim-speed multiplier (default 4)
- *   ?maxTicks=10800            per-match tick cap (default 10800 = 3 min, min 60)
+ *   ?speed=1|2|4|8              sim-speed multiplier (default 4); bounded by the
+ *                               engine's MAX_TICKS_PER_FRAME cap (~2× a 60fps
+ *                               frame), the firm anti-spiral contract.
+ *   ?maxTicks=…                 ACCEPTED for compatibility but no longer honored
+ *                               as a hard cut: the unified engine runs the sim to
+ *                               its own OVER (the sudden-death shrink always ends
+ *                               a match well before MATCH_MAX_TICKS).
  *
  * On every match end a running SCOREBOARD (keyed by contestant label) updates,
- * then a fresh match auto-restarts after ~1.5s with a fresh seed.
+ * then a fresh match auto-restarts shortly after with a fresh seed.
  */
-import { MATCH_MAX_TICKS, TICK_MS } from '../../../shared/constants';
-import { GamePhase } from '../../../shared/types';
 import { AI_VERSIONS, type BotSpec, type IBotController, LATEST_AI_VERSION } from '../ai';
 import { makeFeelParams } from '../config/FeelParams';
+import { KeyboardInput } from '../input/KeyboardInput';
+import { LoopbackTransport } from '../net/LoopbackTransport';
+import { MatchRunner, type MatchBot, type MatchSpec } from '../net/MatchRunner';
+import { MsgType, type MatchStartMsg } from '../net/protocolCodec';
 import { Renderer } from '../render/Renderer';
-import { type InputFrame } from '../sim/InputBuffer';
-import { MAP_KINDS, type MapKind, spawnOrderFromSeed } from '../sim/Map';
-import { resolveOutcome } from '../sim/Outcome';
-import { type SimState, createInitialState, tick } from '../sim/Sim';
+import { NO_INPUT, type InputFrame } from '../sim/InputBuffer';
+import { MAP_KINDS, type MapKind } from '../sim/Map';
 
 /**
  * Pick a fresh uint32 seed for a match. Using Math.random() here is fine: it
@@ -39,9 +41,6 @@ import { type SimState, createInitialState, tick } from '../sim/Sim';
  * sim itself; see sim/Prng.ts.)
  */
 const randomSeed = (): number => Math.floor(Math.random() * 0x1_0000_0000) >>> 0;
-
-/** Clamp big frame gaps (tab switch, breakpoint) to avoid a spiral of death. */
-const MAX_FRAME_MS = 250;
 
 /**
  * Archetype keys spectate accepts in `?lineup=`. Covers every key across all AI
@@ -141,12 +140,6 @@ function parseSpeed(raw: string | null): Speed {
   return (SPEEDS as readonly number[]).includes(n) ? (n as Speed) : 4;
 }
 
-/** Tick cap: ?maxTicks= (default 10800 = 3 min, floored at 60). */
-function parseMaxTicks(raw: string | null): number {
-  const n = Number.parseInt((raw ?? '').trim(), 10);
-  return Number.isFinite(n) ? Math.max(60, Math.trunc(n)) : MATCH_MAX_TICKS;
-}
-
 export async function runSpectate(params: URLSearchParams): Promise<void> {
   // Mutable match config (the on-screen pickers mutate these, then restart()).
   // `lineup` itself is never rebound — the contestant pickers replace its slot
@@ -154,7 +147,6 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
   const lineup: Contestant[] = parseLineup(params.get('lineup'));
   let mapKind: MapKind = parseMapKind(params.get('map'));
   let speed: Speed = parseSpeed(params.get('speed'));
-  const maxTicks: number = parseMaxTicks(params.get('maxTicks'));
 
   const feel = makeFeelParams();
 
@@ -162,29 +154,6 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
   let wins = new Map<string, number>();
   let draws = 0;
   let played = 0;
-
-  // Current match state. Re-seeded + rebuilt on every restart().
-  let seed = randomSeed();
-  let cur: SimState = newState();
-  let prev: SimState = cur;
-  let controllers: IBotController[] = buildControllers();
-  // Per-match guard: tally the result exactly once, even though the OVER phase
-  // (or tick cap) persists for several frames until the auto-restart fires.
-  let matchScored = false;
-
-  /** FFA (teams undefined → each slot its own team), pvp last-team-standing. */
-  function newState(): SimState {
-    return createInitialState(seed, feel, lineup.length, {
-      pvp: true,
-      map: mapKind,
-      spawnOrder: spawnOrderFromSeed(seed),
-    });
-  }
-
-  /** One deterministic bot brain per slot, derived from the current seed. */
-  function buildControllers(): IBotController[] {
-    return lineup.map((c, slot) => makeController(c, seed, slot));
-  }
 
   const renderer = await Renderer.create();
   const mount = document.getElementById('app');
@@ -299,79 +268,84 @@ export async function runSpectate(params: URLSearchParams): Promise<void> {
   document.body.appendChild(slot1Picker);
 
   // ---- Match lifecycle ----------------------------------------------------
-  let restartTimer: ReturnType<typeof setTimeout> | undefined;
+  // No human slot at all: the nominal local slot is a PHANTOM index past every
+  // real slot (max lineup = 4 → real slots 0..3, phantom = 4). The engine still
+  // runs its local input cadence on this slot (warmup + send + echo), but it is
+  // never required by the per-slot completeness check and never read into the
+  // dense input array, so the loopback's NO_INPUT for it is inert — every real
+  // slot is bot-filled inside the engine. (Using a real bot slot would let the
+  // send-site's NO_INPUT shadow that bot's brain; the phantom avoids that.)
+  const LOCAL_SLOT = 4;
+  const transport = new LoopbackTransport(LOCAL_SLOT);
+  const keyboard = new KeyboardInput();
+  let runner: MatchRunner | null = null;
 
-  /** Start a fresh match (new seed, rebuilt bots) keeping the scoreboard. */
-  const restartMatch = (): void => {
-    if (restartTimer !== undefined) {
-      clearTimeout(restartTimer);
-      restartTimer = undefined;
-    }
-    seed = randomSeed();
-    controllers = buildControllers();
-    cur = newState();
-    prev = cur;
-    matchScored = false;
-    acc = 0;
+  /** Build the next match spec (new seed, all-bot lineup) from current config. */
+  const rebuild = (): MatchSpec => {
+    const seed = randomSeed();
+    const bots: MatchBot[] = lineup.map((c, slot) => ({
+      slot,
+      brain: makeController(c, seed, slot),
+    }));
+    // FFA: teams omitted → team = slot, last-bot-standing wins (pvp).
+    const start: MatchStartMsg = {
+      type: MsgType.MATCH_START,
+      seed,
+      slot: LOCAL_SLOT, // phantom local slot (see above)
+      config: feel,
+      t0: 0,
+      map: mapKind,
+    };
     applyHud();
+    return { start, numPlayers: lineup.length, bots };
   };
 
-  /** A config knob changed: reset the scoreboard, then start a fresh match. */
+  /** Tally the finished match into the scoreboard (winnerTeam = winnerSlot in
+   *  FFA): clean last-bot-standing, or — at the cap — most survivors → item
+   *  tiebreak → draw (resolved by the runner via resolveOutcome). */
+  const scoreMatch = (winnerTeam: number | null): void => {
+    played += 1;
+    if (winnerTeam === null) {
+      draws += 1;
+    } else {
+      const label = lineup[winnerTeam]?.label;
+      if (label !== undefined) wins.set(label, (wins.get(label) ?? 0) + 1);
+    }
+    renderScoreboard();
+  };
+
+  /** (Re)build the runner from current config (speed/lineup/map). */
+  const buildRunner = (): MatchRunner => {
+    const initial = rebuild();
+    return new MatchRunner({
+      transport,
+      start: initial.start,
+      numPlayers: initial.numPlayers,
+      bots: initial.bots,
+      renderer,
+      keyboard,
+      // No human: the phantom local slot is never read, so feed NO_INPUT.
+      sampleLocalInput: (): InputFrame => NO_INPUT,
+      countdown: false, // spectate skips the intro hold (watch immediately)
+      autoRestart: true,
+      restartDelayMs: 1500,
+      rebuild,
+      showMuteButton: false, // spectate has no audio chrome
+      speed, // wall-clock multiplier (bounded by the engine tick cap)
+      onOver: (_result, _final, winnerTeam) => scoreMatch(winnerTeam),
+    });
+  };
+
+  /** A config knob changed: reset the scoreboard, tear down + rebuild the runner
+   *  (so a new speed takes effect; lineup/map are read by the rebuild factory). */
   function restartFresh(): void {
     wins = new Map<string, number>();
     draws = 0;
     played = 0;
     renderScoreboard();
-    restartMatch();
+    runner?.stop();
+    runner = buildRunner();
   }
 
-  /** Tally the finished match into the scoreboard (called once per match). */
-  const scoreMatch = (): void => {
-    // Each bot is its own team (FFA), so the shared resolver's winnerSlot is the
-    // winning contestant: clean last-bot-standing, or — at the cap — most
-    // survivors → item tiebreak → draw.
-    const { winnerSlot } = resolveOutcome(cur);
-    played += 1;
-    if (winnerSlot === null) {
-      draws += 1;
-    } else {
-      const label = lineup[winnerSlot]!.label;
-      wins.set(label, (wins.get(label) ?? 0) + 1);
-    }
-    renderScoreboard();
-  };
-
-  let acc = 0;
-  let last: number | undefined;
-
-  const frame = (now: number): void => {
-    const dt = last === undefined ? 0 : Math.min(now - last, MAX_FRAME_MS);
-    last = now;
-    acc += dt;
-
-    while (acc >= TICK_MS) {
-      // SPEED: run `speed` sim-ticks per TICK_MS of accumulated time.
-      for (let step = 0; step < speed; step++) {
-        const inputs: InputFrame[] = [];
-        for (let s = 0; s < lineup.length; s++) {
-          inputs.push(controllers[s]!.sample(cur, s));
-        }
-        prev = cur;
-        cur = tick(cur, inputs);
-        if (cur.phase === GamePhase.OVER || cur.tick >= maxTicks) break;
-      }
-      acc -= TICK_MS;
-    }
-
-    // Match end: tally once, then schedule a fresh match ~1.5s later.
-    if ((cur.phase === GamePhase.OVER || cur.tick >= maxTicks) && !matchScored) {
-      matchScored = true;
-      scoreMatch();
-      restartTimer = setTimeout(restartMatch, 1500);
-    }
-
-    renderer.render(prev, cur, acc / TICK_MS);
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
+  runner = buildRunner();
 }

@@ -30,6 +30,9 @@ class MsgType(IntEnum):
     REMOVE_BOT = 0x07
     MATCH_RESULT = 0x08
     GET_LEADERBOARD = 0x09
+    REPLAY_UPLOAD = 0x0A
+    SET_ROOM_SETTINGS = 0x0B
+    SET_PLAYER_TEAM = 0x0C
 
     # Server → Client
     ROOM_STATE = 0x10
@@ -40,6 +43,13 @@ class MsgType(IntEnum):
     HASH_MISMATCH = 0x15
     PLAYER_DISCONNECT = 0x16
     LEADERBOARD = 0x17
+
+
+#: Selectable map kinds (mirror of client/src/sim/Map.ts MAP_KINDS). The relay
+#: never simulates, so it only needs to validate the host's pick against this
+#: allow-list; add a key here whenever a new authored map ships client-side.
+MAP_KINDS = ("classic", "pirate", "village")
+DEFAULT_MAP = "classic"
 
 
 # ---------------------------------------------------------------------------
@@ -108,26 +118,99 @@ def get_leaderboard(limit: int = 10) -> bytes:
     return encode(MsgType.GET_LEADERBOARD, {"limit": limit})
 
 
+def set_room_settings(map_: str) -> bytes:
+    """SetRoomSettingsMsg — host's map pick (relay ignores non-hosts)."""
+    return encode(MsgType.SET_ROOM_SETTINGS, {"map": map_})
+
+
+def set_player_team(slot: int, team: int) -> bytes:
+    """SetPlayerTeamMsg — manual per-slot team (host: any slot; non-host: own only)."""
+    return encode(MsgType.SET_PLAYER_TEAM, {"slot": slot, "team": team})
+
+
+def replay_upload(
+    seed: int,
+    map_: str,
+    teams: list[int],
+    num_players: int,
+    t0: int,
+    config: dict[str, Any],
+    inputs: list[dict[str, Any]],
+    result: str,
+    winner_team: int | None,
+) -> bytes:
+    """ReplayUploadMsg — a self-contained match replay.
+
+    inputs: [{"t": tick, "slots": [{"dirs", "actions"}, …]}, …] (dense, in tick
+    order). result is 'win' | 'loss' | 'draw' relative to the uploader. Phase 2b
+    adds the relay-side storage that consumes this; the shape is locked here.
+    """
+    return encode(
+        MsgType.REPLAY_UPLOAD,
+        {
+            "seed": seed,
+            "map": map_,
+            "teams": teams,
+            "numPlayers": num_players,
+            "t0": t0,
+            "config": config,
+            "inputs": inputs,
+            "result": result,
+            "winnerTeam": winner_team,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Server → Client builders
 # ---------------------------------------------------------------------------
 
 
 def room_state(
-    room_id: str, phase: int, you_slot: int, players: list[dict[str, Any]]
+    room_id: str,
+    phase: int,
+    you_slot: int,
+    players: list[dict[str, Any]],
+    map_: str | None = None,
 ) -> bytes:
-    """RoomStateMsg — players: [{slot, name, ready, connected, isBot, botDifficulty, score}], youSlot per receiver."""
-    return encode(
-        MsgType.ROOM_STATE,
-        {"roomId": room_id, "phase": phase, "youSlot": you_slot, "players": players},
-    )
+    """RoomStateMsg — players: [{slot, name, ready, connected, isBot, botDifficulty, score, team}], youSlot per receiver.
+
+    map is the host's current map pick, reflected so every client's picker stays
+    in sync. Per-slot teams ride on each player entry (`team`). map is optional:
+    omitted keeps the payload byte-identical to pre-Phase-2 (client → classic).
+    """
+    payload: dict[str, Any] = {
+        "roomId": room_id,
+        "phase": phase,
+        "youSlot": you_slot,
+        "players": players,
+    }
+    if map_ is not None:
+        payload["map"] = map_
+    return encode(MsgType.ROOM_STATE, payload)
 
 
-def match_start(seed: int, slot: int, config: dict[str, Any], t0: int) -> bytes:
-    """MatchStartMsg — config is the frozen FeelParams dict (moveSpeed, …)."""
-    return encode(
-        MsgType.MATCH_START, {"seed": seed, "slot": slot, "config": config, "t0": t0}
-    )
+def match_start(
+    seed: int,
+    slot: int,
+    config: dict[str, Any],
+    t0: int,
+    map_: str | None = None,
+    teams: list[int] | None = None,
+) -> bytes:
+    """MatchStartMsg — config is the frozen FeelParams dict (moveSpeed, …).
+
+    map/teams are OPTIONAL. The room passes its current map (omitted when the
+    default 'classic') and its manual per-slot teams array (omitted when it equals
+    the default team[i]=i, so an untouched FFA/classic room stays byte-identical
+    to before). When present, `teams` is full-length (one entry per slot).
+    """
+    payload: dict[str, Any] = {"seed": seed, "slot": slot, "config": config, "t0": t0}
+    if map_ is not None:
+        payload["map"] = map_
+    if teams is not None:
+        payload["teams"] = teams
+    return encode(MsgType.MATCH_START, payload)
 
 
 def input_broadcast(t: int, inputs: list[dict[str, int]]) -> bytes:
