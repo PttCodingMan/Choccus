@@ -35,6 +35,13 @@ def test_msg_type_ids_match_protocol_ts():
     assert MsgType.READY_TOGGLE == 0x03
     assert MsgType.INPUT_FRAME == 0x04
     assert MsgType.HASH_REPORT == 0x05
+    assert MsgType.ADD_BOT == 0x06
+    assert MsgType.REMOVE_BOT == 0x07
+    assert MsgType.MATCH_RESULT == 0x08
+    assert MsgType.GET_LEADERBOARD == 0x09
+    assert MsgType.REPLAY_UPLOAD == 0x0A
+    assert MsgType.SET_ROOM_SETTINGS == 0x0B
+    assert MsgType.SET_PLAYER_TEAM == 0x0C
     assert MsgType.ROOM_STATE == 0x10
     assert MsgType.MATCH_START == 0x11
     assert MsgType.INPUT_BROADCAST == 0x12
@@ -87,6 +94,20 @@ def test_hash_report_uint32():
     )
 
 
+def test_set_room_settings():
+    assert roundtrip(protocol.set_room_settings("pirate")) == (
+        MsgType.SET_ROOM_SETTINGS,
+        {"map": "pirate"},
+    )
+
+
+def test_set_player_team():
+    assert roundtrip(protocol.set_player_team(2, 1)) == (
+        MsgType.SET_PLAYER_TEAM,
+        {"slot": 2, "team": 1},
+    )
+
+
 # -- Server → Client ----------------------------------------------------------
 
 
@@ -95,17 +116,85 @@ def test_room_state():
         {"slot": 0, "name": "alice", "ready": True, "connected": True},
         {"slot": 1, "name": "bob", "ready": False, "connected": False},
     ]
+    # map omitted by default → payload stays byte-identical to before.
     assert roundtrip(protocol.room_state("AB2CD", 0, 1, players)) == (
         MsgType.ROOM_STATE,
         {"roomId": "AB2CD", "phase": 0, "youSlot": 1, "players": players},
     )
 
 
+def test_room_state_with_map():
+    # Per-slot teams ride on the player entries; only the map is a top-level field.
+    players = [{"slot": 0, "name": "alice", "ready": True, "connected": True, "team": 1}]
+    assert roundtrip(protocol.room_state("AB2CD", 0, 0, players, map_="village")) == (
+        MsgType.ROOM_STATE,
+        {
+            "roomId": "AB2CD",
+            "phase": 0,
+            "youSlot": 0,
+            "players": players,
+            "map": "village",
+        },
+    )
+
+
 def test_match_start():
     config = {"moveSpeed": 5.0, "cornerAssist": 0.25, "inputBufferMs": 120}
+    # map/teams omitted by default → payload stays byte-identical to before.
     assert roundtrip(protocol.match_start(0xFFFFFFFF, 3, config, 0)) == (
         MsgType.MATCH_START,
         {"seed": 0xFFFFFFFF, "slot": 3, "config": config, "t0": 0},
+    )
+
+
+def test_match_start_with_map_and_teams():
+    config = {"moveSpeed": 5.0, "cornerAssist": 0.25, "inputBufferMs": 120}
+    assert roundtrip(
+        protocol.match_start(7, 0, config, 0, map_="pirate", teams=[0, 1, 1, 0])
+    ) == (
+        MsgType.MATCH_START,
+        {
+            "seed": 7,
+            "slot": 0,
+            "config": config,
+            "t0": 0,
+            "map": "pirate",
+            "teams": [0, 1, 1, 0],
+        },
+    )
+
+
+def test_replay_upload():
+    config = {"moveSpeed": 5.0, "cornerAssist": 0.25, "inputBufferMs": 120}
+    inputs = [
+        {"t": 0, "slots": [{"dirs": 1, "actions": 0}, {"dirs": 0, "actions": 0}]},
+        {"t": 1, "slots": [{"dirs": 4, "actions": 1}, {"dirs": 8, "actions": 0}]},
+    ]
+    assert roundtrip(
+        protocol.replay_upload(
+            seed=123,
+            map_="classic",
+            teams=[0, 1],
+            num_players=2,
+            t0=0,
+            config=config,
+            inputs=inputs,
+            result="loss",
+            winner_team=1,
+        )
+    ) == (
+        MsgType.REPLAY_UPLOAD,
+        {
+            "seed": 123,
+            "map": "classic",
+            "teams": [0, 1],
+            "numPlayers": 2,
+            "t0": 0,
+            "config": config,
+            "inputs": inputs,
+            "result": "loss",
+            "winnerTeam": 1,
+        },
     )
 
 

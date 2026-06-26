@@ -35,6 +35,27 @@ INPUT_HISTORY_SIZE = 64
 #: One slot per spawn corner of the 15x13 map.
 MAX_PLAYERS = 4
 
+# --- Match cap (shared/constants.ts MATCH_MAX_TICKS) ------------------------
+
+#: Hard upper bound on a match's tick count (180 s * 60 Hz = 10800). An uploaded
+#: replay claiming more ticks than this cannot be a real match. Mirror of
+#: shared/constants.ts MATCH_MAX_TICKS; update together.
+MATCH_MAX_TICKS = 10800
+
+# --- Replay upload caps (untrusted client data) ----------------------------
+# An uploaded replay is attacker-controlled. It is bounded here so one bad
+# upload can never OOM the relay or fill the disk (mirrors the lockstep tick/
+# input bounding TickCoordinator already does). Over-cap or malformed uploads
+# are dropped silently, exactly like other invalid client input.
+
+#: Max ticks an uploaded replay may contain (slack above MATCH_MAX_TICKS for the
+#: INPUT_DELAY warmup frames; anything beyond is bogus).
+MAX_REPLAY_TICKS = MATCH_MAX_TICKS + 64
+#: Max slots per replay tick frame (= MAX_PLAYERS; a wider frame is malformed).
+MAX_REPLAY_SLOTS = MAX_PLAYERS
+#: Max length of a host's map/format setting string before allow-list validation.
+MAX_ROOM_SETTING_LEN = 32
+
 # --- Untrusted input caps ---------------------------------------------------
 # Client-supplied strings are re-broadcast to peers and written to SQLite, so
 # they are truncated on ingest to keep one client from bloating frames/storage

@@ -194,9 +194,12 @@ export class LobbyUI {
   onLogin?: (provider: 'discord' | 'google') => void;
   /** Clear the stored session (stay on the landing screen). */
   onLogout?: () => void;
-  /** Host-only room settings (offline LocalRoom; hidden for relay rooms). */
+  /** Host map pick (offline LocalRoom + net host; map picker hidden otherwise). */
   onSelectMap?: (map: string) => void;
-  onSelectFormat?: (format: string) => void;
+  /** Manual team assignment: a roster card was clicked → cycle `slot` to
+   *  `nextTeam` (the team after its current one, wrapping 0..MAX-1). */
+  onCycleTeam?: (slot: number, nextTeam: number) => void;
+  /** Offline seat colour swatch picked (offline LocalRoom only). */
   onSelectColor?: (color: number) => void;
   /** Build the shareable invite URL for a room id (injected by netMode). */
   buildInviteUrl?: (roomId: string) => string;
@@ -219,7 +222,7 @@ export class LobbyUI {
   private readonly copyBtn: HTMLButtonElement;
   private readonly hostSettingsEl: HTMLDivElement;
   private readonly mapSelect: HTMLSelectElement;
-  private readonly formatSelect: HTMLSelectElement;
+  private readonly colorCol: HTMLDivElement;
   private readonly colorSwatches: HTMLButtonElement[] = [];
   private readonly rosterEl: HTMLDivElement;
   private readonly roomStatus: HTMLDivElement;
@@ -229,6 +232,10 @@ export class LobbyUI {
   /** DDA-suggested bot tier; pre-selects empty-seat pickers. */
   private suggestedBotTier = 'normal';
   private lastRoomState: RoomStateMsg | null = null;
+  /** Whether a roster card's team may be cycled by the local client. Default:
+   *  every card editable (offline LocalRoom — you are host). Net narrows it to
+   *  host:any / non-host:own via setTeamEditable. */
+  private teamEditable: (slot: number) => boolean = () => true;
 
   // -- disconnected ---------------------------------------------------------------
   private readonly discScreen: HTMLDivElement;
@@ -397,8 +404,10 @@ export class LobbyUI {
     this.copyBtn = button(codeRow, 'Copy invite link');
     this.copyBtn.addEventListener('click', () => this.copyInviteLink());
 
-    // Host-only settings (offline LocalRoom): map + team format. Hidden by
-    // default (showRoom hides it; setHostSettings re-shows for the local room).
+    // Host-only settings: the map picker (offline LocalRoom + net host). Teams
+    // are MANUAL per-slot — click a roster card to cycle its team colour (see
+    // showRoom / rosterCard); there is no format picker. Hidden by default
+    // (showRoom hides it; setHostSettings re-shows it).
     this.hostSettingsEl = el(
       'div',
       'display:none;gap:10px;margin-bottom:12px;flex-wrap:wrap;',
@@ -410,19 +419,12 @@ export class LobbyUI {
       MAP_KINDS.map((k) => [k, k.charAt(0).toUpperCase() + k.slice(1)] as const),
     );
     this.mapSelect.addEventListener('change', () => this.onSelectMap?.(this.mapSelect.value));
-    this.formatSelect = labeledSelect(this.hostSettingsEl, '隊形', [
-      ['ffa', 'Free For All'],
-      ['1v2', '1 vs 2'],
-      ['1v3', '1 vs 3'],
-      ['2v2', '2v2 Team'],
-    ]);
-    this.formatSelect.addEventListener('change', () =>
-      this.onSelectFormat?.(this.formatSelect.value),
-    );
 
     // Colour picker: one swatch per body palette; the chosen one = the player's
-    // team/colour in the match (see net/LocalRoom).
-    const colorCol = el('div', 'display:flex;flex-direction:column;gap:3px;', this.hostSettingsEl);
+    // own team/colour in the match (see net/LocalRoom). Offline-room only —
+    // hidden in relay rooms, where each player sets their team by clicking cards.
+    this.colorCol = el('div', 'display:flex;flex-direction:column;gap:3px;', this.hostSettingsEl);
+    const colorCol = this.colorCol;
     label(colorCol, '顏色');
     const swatchRow = el('div', 'display:flex;gap:6px;', colorCol);
     TEAM_PALETTE.forEach((pal, i) => {
@@ -597,19 +599,47 @@ export class LobbyUI {
     this.roomInput.value = roomId;
   }
 
-  /** Show + sync the host-settings row (offline room). null = leave it hidden
-   *  (relay rooms). Call AFTER showRoom (which hides it by default). */
-  setHostSettings(opts: { map: string; format: string; color: number } | null): void {
+  /**
+   * Show + sync the host-settings row (the map picker). null = leave it hidden.
+   * Call AFTER showRoom (which hides it by default). Two shapes:
+   *  - offline LocalRoom: `{ map, color }` — the seat colour swatches are shown
+   *    and the map picker is enabled (the lone player is always host).
+   *  - net relay room: `{ map, host }` — the colour picker is hidden (net teams
+   *    are set by clicking roster cards) and the map picker is enabled only for
+   *    the host; a non-host sees the host's current map reflected but locked.
+   * Teams themselves are rendered on the roster cards (see showRoom), not here.
+   */
+  setHostSettings(
+    opts:
+      | { map: string; color: number }
+      | { map: string; host: boolean }
+      | null,
+  ): void {
     if (opts === null) {
       this.hostSettingsEl.style.display = 'none';
       return;
     }
     this.mapSelect.value = opts.map;
-    this.formatSelect.value = opts.format;
-    this.colorSwatches.forEach((sw, i) => {
-      sw.style.borderColor = i === opts.color ? PALETTE.text : 'transparent';
-    });
+    const offline = 'color' in opts;
+    const enabled = offline || opts.host;
+    this.mapSelect.disabled = !enabled;
+    this.mapSelect.style.opacity = enabled ? '1' : '0.55';
+    this.mapSelect.style.cursor = enabled ? 'pointer' : 'not-allowed';
+    // Colour swatches are offline-only (per-seat colour pick).
+    this.colorCol.style.display = offline ? 'flex' : 'none';
+    if (offline) {
+      this.colorSwatches.forEach((sw, i) => {
+        sw.style.borderColor = i === opts.color ? PALETTE.text : 'transparent';
+      });
+    }
     this.hostSettingsEl.style.display = 'flex';
+  }
+
+  /** Set the predicate gating which roster cards the local client may re-team
+   *  (host: any slot; non-host: own slot only). Net calls this before showRoom;
+   *  offline leaves the default (every card editable). */
+  setTeamEditable(predicate: (slot: number) => boolean): void {
+    this.teamEditable = predicate;
   }
 
   /** Pre-select this tier in empty-seat "+ Bot" pickers (from local DDA). */
@@ -710,17 +740,35 @@ export class LobbyUI {
     return av;
   }
 
-  /** One roster row = chef-hat cutie (human) or robot-chef (bot) + name + pill. */
+  /** One roster row = chef-hat cutie (human) or robot-chef (bot) + name + pill.
+   *  The card is tinted by + clickable to cycle its TEAM colour when the local
+   *  client may edit this slot (host: any; non-host: own). */
   private rosterCard(p: RoomPlayer, youSlot: number): HTMLDivElement {
     const you = p.slot === youSlot;
     const ready = p.connected && p.ready;
+    const team = p.team ?? p.slot;
+    const teamCol = TEAM_PALETTE[team % TEAM_PALETTE.length] ?? TEAM_PALETTE[0];
+    const editable = this.teamEditable(p.slot);
     const row = this.slotRow(
       ready ? PALETTE.mintBg : 'rgba(255,255,255,0.5)',
-      ready ? 'rgba(127,209,185,0.7)' : 'rgba(214,170,110,0.35)',
+      // Border carries the team colour so grouped teammates read at a glance.
+      teamCol.base,
     );
+    // A team-coloured left stripe reinforces the grouping beyond the border.
+    row.style.borderLeft = `6px solid ${teamCol.lo}`;
 
-    // Colour by the explicit palette override (offline colour picking) else slot.
-    row.appendChild(this.avatar(p.color ?? p.slot, p.isBot ?? false, !p.connected));
+    // Click the card to cycle this slot's team (next palette colour, wrapping).
+    if (editable) {
+      row.style.cursor = 'pointer';
+      row.title = '點擊切換隊伍顏色';
+      row.addEventListener('click', () => {
+        const next = (team + 1) % TEAM_PALETTE.length;
+        this.onCycleTeam?.(p.slot, next);
+      });
+    }
+
+    // Avatar coloured by TEAM (so teammates share a body colour).
+    row.appendChild(this.avatar(team, p.isBot ?? false, !p.connected));
 
     // Name + slot.
     const col = el('div', 'flex:1 1 auto;min-width:0;', row);
@@ -732,7 +780,7 @@ export class LobbyUI {
     nm.textContent = (p.name || '(unnamed)') + (you ? '（你）' : '');
     const meta = el('div', `font:600 12px ${FONT};color:${PALETTE.soft};`, col);
     meta.textContent =
-      `P${p.slot + 1}` +
+      `P${p.slot + 1} · 隊伍 ${team + 1}` +
       (p.score !== undefined && p.score !== null ? `  ·  ★ ${Math.round(p.score)}` : '');
 
     if (p.isBot) {
@@ -752,7 +800,11 @@ export class LobbyUI {
       );
       x.textContent = '✕';
       x.title = 'Remove bot';
-      x.addEventListener('click', () => this.onRemoveBot?.(p.slot));
+      // Stop the click from also cycling the card's team.
+      x.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.onRemoveBot?.(p.slot);
+      });
       return row;
     }
 

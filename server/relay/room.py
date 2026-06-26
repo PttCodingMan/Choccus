@@ -16,7 +16,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .constants import DEFAULT_FEEL_PARAMS, MAX_PLAYERS, GamePhase
-from .protocol import match_start, player_disconnect, room_state
+from .protocol import (
+    DEFAULT_MAP,
+    MAP_KINDS,
+    match_start,
+    player_disconnect,
+    room_state,
+)
 from .ratings import RatingStore, ordinal, synthetic_bot_id
 from .tick_coordinator import TickCoordinator
 
@@ -57,6 +63,15 @@ class Room:
     #: every client computes their input locally (deterministic from the shared
     #: seed + tier), so the relay never relays or waits for them.
     bots: dict[int, str] = field(default_factory=dict)
+    #: Host-picked map (lobby picker). Feeds MatchStart.map. Only the host
+    #: (lowest-slot human) may change it.
+    map: str = DEFAULT_MAP
+    #: MANUAL per-slot team assignment: slot -> team id (= colour index). Default
+    #: for a slot = its own index (FFA). Mutated by set_player_team (host: any
+    #: slot; non-host: own slot only). The relay is the AUTHORITY: this array goes
+    #: out in RoomState (per player) and MatchStart.teams, identical on every
+    #: client → determinism.
+    teams: dict[int, int] = field(default_factory=dict)
     coordinator: TickCoordinator | None = None
     seed: int | None = None
     #: Authoritative rating store (shared across rooms); None disables ratings.
@@ -82,6 +97,7 @@ class Room:
             return None
         slot = next(s for s in range(MAX_PLAYERS) if self._free_slot(s))
         self.players[slot] = Player(name=name, send=send, player_id=player_id)
+        self.teams[slot] = slot  # default team = own slot (FFA)
         return slot
 
     def add_bot(self, slot: int, difficulty: str = "normal") -> bool:
@@ -89,6 +105,7 @@ class Room:
         if self.phase != GamePhase.LOBBY or not self._free_slot(slot):
             return False
         self.bots[slot] = difficulty if difficulty in BOT_DIFFICULTIES else "normal"
+        self.teams[slot] = slot  # default team = own slot (FFA)
         return True
 
     def remove_bot(self, slot: int) -> bool:
@@ -96,6 +113,7 @@ class Room:
         if self.phase != GamePhase.LOBBY or slot not in self.bots:
             return False
         del self.bots[slot]
+        self.teams.pop(slot, None)
         return True
 
     def remove_player(self, slot: int) -> None:
@@ -105,6 +123,7 @@ class Room:
             return
         if self.phase == GamePhase.LOBBY:
             del self.players[slot]
+            self.teams.pop(slot, None)
         else:
             self.players[slot].connected = False
             if self.coordinator is not None:
@@ -114,6 +133,45 @@ class Room:
     def set_ready(self, slot: int, ready: bool) -> None:
         if self.phase == GamePhase.LOBBY and slot in self.players:
             self.players[slot].ready = ready
+
+    @property
+    def host_slot(self) -> int | None:
+        """The host = lowest-slot HUMAN player (bots never host). None if empty.
+
+        Stable for a given roster, so every client agrees on who the host is and
+        only that client's SetRoomSettings / cross-slot SetPlayerTeam is honoured."""
+        human_slots = [s for s in self.players]
+        return min(human_slots) if human_slots else None
+
+    def set_map(self, slot: int, map_: str) -> bool:
+        """Host-only: update the room's map (lobby only). Ignores non-host slots,
+        in-game changes, and unknown maps. Returns True iff the map changed."""
+        if self.phase != GamePhase.LOBBY or slot != self.host_slot:
+            return False
+        if map_ not in MAP_KINDS or map_ == self.map:
+            return False
+        self.map = map_
+        return True
+
+    def set_player_team(self, actor_slot: int, target_slot: int, team: int) -> bool:
+        """Manual per-slot team assignment (lobby only).
+
+        Permissions: the HOST may set ANY occupied slot; a non-host may set ONLY
+        its own slot. `team` is bounded 0..MAX_PLAYERS-1. Ignores in-game changes,
+        unknown target slots, out-of-range teams, and no-op changes. Returns True
+        iff the team actually changed (so the caller re-broadcasts)."""
+        if self.phase != GamePhase.LOBBY:
+            return False
+        if actor_slot != self.host_slot and actor_slot != target_slot:
+            return False  # non-host may only set its own slot
+        if target_slot not in self.players and target_slot not in self.bots:
+            return False  # unknown / empty slot
+        if not (0 <= team < MAX_PLAYERS):
+            return False
+        if self.teams.get(target_slot, target_slot) == team:
+            return False
+        self.teams[target_slot] = team
+        return True
 
     def all_ready(self) -> bool:
         return bool(self.players) and all(p.ready for p in self.players.values())
@@ -151,8 +209,20 @@ class Room:
             bots=self.bots.keys(),
         )
         config = dict(DEFAULT_FEEL_PARAMS)  # frozen for the whole match
+        # Map + teams come from the room. The relay is the SINGLE authority for
+        # the manual per-slot `teams` array (one entry per slot, indexed 0..n-1)
+        # so every client gets the identical array → determinism. To keep an
+        # untouched FFA/classic room byte-identical on the wire, omit `map` when
+        # it is the default and `teams` when it equals the default team[i]=i.
+        all_slots = list(self.players.keys()) + list(self.bots.keys())
+        num_players = (max(all_slots) + 1) if all_slots else 0
+        teams_arr = [self.teams.get(s, s) for s in range(num_players)]
+        map_arg = self.map if self.map != DEFAULT_MAP else None
+        teams_arg = teams_arr if teams_arr != list(range(num_players)) else None
         for slot, player in self.players.items():
-            player.send(match_start(self.seed, slot, config, MATCH_T0))
+            player.send(
+                match_start(self.seed, slot, config, MATCH_T0, map_arg, teams_arg)
+            )
 
     def apply_result(self, slot: int, winner_team: int | None) -> bool:
         """Record one human slot's reported outcome; rate on full consensus.
@@ -215,6 +285,10 @@ class Room:
         self.players = {s: p for s, p in self.players.items() if p.connected}
         for player in self.players.values():
             player.ready = False
+        # Prune team entries for slots that no longer exist (disconnected slots
+        # dropped above); surviving players/bots keep their chosen teams.
+        live_slots = set(self.players) | set(self.bots)
+        self.teams = {s: t for s, t in self.teams.items() if s in live_slots}
         if self.coordinator is not None:
             self.coordinator.close()
             self.coordinator = None
@@ -242,6 +316,7 @@ class Room:
                 "ready": p.ready,
                 "connected": p.connected,
                 "score": self._score(p.player_id),
+                "team": self.teams.get(slot, slot),
             }
             for slot, p in self.players.items()
         ] + [
@@ -253,6 +328,7 @@ class Room:
                 "isBot": True,
                 "botDifficulty": difficulty,
                 "score": self._score(synthetic_bot_id(difficulty)),
+                "team": self.teams.get(slot, slot),
             }
             for slot, difficulty in self.bots.items()
         ]
@@ -260,7 +336,13 @@ class Room:
         for slot, player in self.players.items():
             if player.connected:
                 player.send(
-                    room_state(self.room_id, int(self.phase), slot, roster)
+                    room_state(
+                        self.room_id,
+                        int(self.phase),
+                        slot,
+                        roster,
+                        self.map,
+                    )
                 )
 
     # -- lifecycle --------------------------------------------------------------------

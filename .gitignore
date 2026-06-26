@@ -9,6 +9,9 @@ __pycache__/
 
 # Server runtime data (generated; not source)
 *.db
+# Uploaded match replays (runtime client uploads; never committed)
+server/replays/
+replays/
 
 # Machine-local Claude instructions (remote nodes, ssh aliases, private paths)
 CLAUDE.local.md

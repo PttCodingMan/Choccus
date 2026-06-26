@@ -26,7 +26,7 @@ import {
   TICK_HZ,
 } from '../../../shared/constants';
 import { GamePhase, TileKind } from '../../../shared/types';
-import { idx } from '../sim/Map';
+import { idx, inBounds } from '../sim/Map';
 import { resolveOutcome } from '../sim/Outcome';
 import { dirDX, dirDY, type PlayerState } from '../sim/Player';
 import type { SimState } from '../sim/Sim';
@@ -106,7 +106,7 @@ export class Renderer {
     { node: HTMLDivElement; candle: HTMLElement; flame: HTMLElement }
   >();
   private readonly explPool = new Map<
-    string,
+    number,
     { node: HTMLDivElement; mask: number; op: string; shown: boolean }
   >();
   private readonly playerPool = new Map<number, { node: HTMLDivElement; sig: string; z: string }>();
@@ -436,34 +436,40 @@ export class Renderer {
 
   // -- Explosions (tile-locked; center = bright ring/core/drops) -------------
   private updateExplosions(prev: SimState, next: SimState): void {
-    const cells = new Set<string>();
-    for (const c of next.explosions) cells.add(`${c.tileX},${c.tileY}`);
+    // Numeric idx() keys (not `"x,y"` strings) to avoid per-frame string churn —
+    // this path runs every frame while flames live and scales with chain size.
+    const cells = new Set<number>();
+    for (const c of next.explosions) cells.add(idx(c.tileX, c.tileY));
     // Blast origins = bombs that vanished this tick (detonated). The whole cross
     // spawns on one tick, so to read as "erupting from centre" each cell pops in
     // staggered by its tile-distance to the nearest origin (centre first, arms
     // ripple out) — a quick wave. Render-only; sim stays instant.
-    const liveBombs = new Set<string>();
-    for (const b of next.bombs) liveBombs.add(`${b.tileX},${b.tileY}`);
+    const liveBombs = new Set<number>();
+    for (const b of next.bombs) liveBombs.add(idx(b.tileX, b.tileY));
     const origins: Array<[number, number]> = [];
     for (const b of prev.bombs)
-      if (!liveBombs.has(`${b.tileX},${b.tileY}`)) origins.push([b.tileX, b.tileY]);
+      if (!liveBombs.has(idx(b.tileX, b.tileY))) origins.push([b.tileX, b.tileY]);
     const ringOf = (x: number, y: number): number => {
       let best = Infinity;
       for (const [ox, oy] of origins)
         best = Math.min(best, Math.abs(x - ox) + Math.abs(y - oy));
       return best === Infinity ? 0 : best;
     };
+    // idx() wraps out-of-bounds neighbours (idx(-1,y) === idx(COLS-1,y-1)), so
+    // bounds-guard each lookup — the `"x,y"` string keys gave this for free.
+    const burning = (x: number, y: number): boolean =>
+      inBounds(x, y) && cells.has(idx(x, y));
     // 4-bit set of burning neighbours (1=left 2=right 4=up 8=down) → drives the
     // directional stream shape so straight arms fuse instead of reading as beads.
     const maskOf = (x: number, y: number): number =>
-      (cells.has(`${x - 1},${y}`) ? 1 : 0) |
-      (cells.has(`${x + 1},${y}`) ? 2 : 0) |
-      (cells.has(`${x},${y - 1}`) ? 4 : 0) |
-      (cells.has(`${x},${y + 1}`) ? 8 : 0);
+      (burning(x - 1, y) ? 1 : 0) |
+      (burning(x + 1, y) ? 2 : 0) |
+      (burning(x, y - 1) ? 4 : 0) |
+      (burning(x, y + 1) ? 8 : 0);
 
-    const seen = new Set<string>();
+    const seen = new Set<number>();
     for (const c of next.explosions) {
-      const key = `${c.tileX},${c.tileY}`;
+      const key = idx(c.tileX, c.tileY);
       seen.add(key);
       const mask = maskOf(c.tileX, c.tileY);
       let v = this.explPool.get(key);
@@ -579,11 +585,11 @@ export class Renderer {
         card = buildCard(pl.slot, this.cards);
         this.cardPool.set(pl.slot, card);
       }
-      const pal = teamPalette(pl.team);
-      const bg = `linear-gradient(165deg,${pal.hi},${pal.base} 58%,${pal.lo})`;
-      if (bg !== card.lastBg) {
-        card.lastBg = bg;
-        card.dot.style.background = bg;
+      // team is fixed for the match → build the gradient once, not every frame.
+      if (pl.team !== card.lastTeam) {
+        card.lastTeam = pl.team;
+        const pal = teamPalette(pl.team);
+        card.dot.style.background = `linear-gradient(165deg,${pal.hi},${pal.base} 58%,${pal.lo})`;
       }
       const name = this.slotLabels[pl.slot] ?? `P${pl.slot + 1}`;
       if (name !== card.lastName) {
@@ -614,7 +620,7 @@ interface CardView {
   dot: HTMLDivElement;
   name: HTMLDivElement;
   stats: HTMLDivElement;
-  lastBg?: string;
+  lastTeam?: number;
   lastName?: string;
   lastStats?: string;
   lastOpacity?: string;

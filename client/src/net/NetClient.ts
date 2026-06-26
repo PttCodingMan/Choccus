@@ -25,6 +25,9 @@ import {
   buildMatchResult,
   buildReadyToggle,
   buildRemoveBot,
+  buildReplayUpload,
+  buildSetPlayerTeam,
+  buildSetRoomSettings,
   decodeServerMsg,
 } from './protocolCodec';
 import type { ServerMsg } from './protocolCodec';
@@ -34,10 +37,12 @@ import type {
   LeaderboardMsg,
   MatchStartMsg,
   PlayerDisconnectMsg,
+  ReplayUploadMsg,
   RoomStateMsg,
   StallNoticeMsg,
   TickReadyMsg,
 } from './protocolCodec';
+import type { Transport } from './Transport';
 
 /** Event name → payload map for NetClient.on(). */
 export interface NetClientEvents {
@@ -74,7 +79,7 @@ type Listener<K extends keyof NetClientEvents> = (
 
 const CONNECT_TIMEOUT_MS = 5000;
 
-export class NetClient {
+export class NetClient implements Transport {
   private ws: WebSocket | null = null;
   private readonly listeners = new Map<
     keyof NetClientEvents,
@@ -255,8 +260,23 @@ export class NetClient {
     this.send(buildRemoveBot(slot));
   }
 
+  /** Host-only: set the room's map (relay ignores non-hosts). */
+  setRoomSettings(map: string): void {
+    this.send(buildSetRoomSettings(map));
+  }
+
+  /** Set a slot's team (host: any slot; non-host: own slot only — relay enforced). */
+  setPlayerTeam(slot: number, team: number): void {
+    this.send(buildSetPlayerTeam(slot, team));
+  }
+
   requestLeaderboard(limit: number = 10): void {
     this.send(buildGetLeaderboard(limit));
+  }
+
+  /** Upload a finished match's replay (loser-only; consumed by Phase 2b). */
+  uploadReplay(replay: Omit<ReplayUploadMsg, 'type'>): void {
+    this.send(buildReplayUpload(replay));
   }
 
   sendInput(t: number, dirs: number, actions: number): void {

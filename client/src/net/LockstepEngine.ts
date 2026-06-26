@@ -45,7 +45,7 @@ import { type FeelParams, makeFeelParams } from '../config/FeelParams';
 import { type InputFrame, NO_INPUT } from '../sim/InputBuffer';
 import { spawnOrderFromSeed } from '../sim/Map';
 import { type SimState, createInitialState, tick } from '../sim/Sim';
-import type { NetClient } from './NetClient';
+import type { Transport } from './Transport';
 import type {
   HashMismatchMsg,
   MatchStartMsg,
@@ -58,8 +58,21 @@ const MAX_UPDATE_DT_MS = 1000;
 /** Clamp on the accumulator while blocked — caps the post-stall burst. */
 const MAX_ACC_MS = 2000;
 
+/**
+ * Hard cap on sim ticks advanced per update() call. The net path is bounded by
+ * input availability AND MAX_ACC_MS, but the loopback path never stalls (it
+ * echoes its own input), so MAX_ACC_MS alone would let one slow frame on a slow
+ * CPU run an unbounded catch-up burst — each tick samples every bot (depth-4
+ * forward search), so a burst blocks paint and is felt as lag. Cap the burst at
+ * 2 (covers a normal 30 fps machine = 2 ticks/frame); after the cap is hit the
+ * leftover accumulator is dropped so it can't snowball into a longer next frame.
+ * This supersedes the per-frame caps that used to live in the old local loops.
+ */
+const MAX_TICKS_PER_FRAME = 2;
+
 export interface LockstepEngineOptions {
-  client: NetClient;
+  /** Input transport (relay NetClient for net, LoopbackTransport for local). */
+  transport: Transport;
   start: MatchStartMsg;
   /**
    * Slot count of the match = highest occupied slot + 1 from the LAST
@@ -71,16 +84,39 @@ export interface LockstepEngineOptions {
   /** Sample the LOCAL player's raw input for the given target sim tick. */
   sampleLocalInput: (forTick: number) => InputFrame;
   /**
-   * Slots filled by AI bots (from the RoomState roster), each with its chosen
-   * strength tier. Bots have no socket — every client runs them locally and
-   * deterministically: createBot(seed, slot, …) + the byte-identical lockstep
-   * state guarantee an identical input sequence on every client, so no bot data
-   * crosses the wire and the relay never waits on these slots. The tier maps to
-   * the same BT rung on every client (botDifficulty.ts).
+   * Slots filled by AI bots. Bots have no socket — every client runs them
+   * locally and deterministically: the byte-identical lockstep state guarantees
+   * an identical input sequence on every client, so no bot data crosses the wire
+   * and the relay never waits on these slots.
+   *
+   * Two ways to specify a bot, mutually exclusive per entry:
+   * - NET path: `difficulty` (a strength tier) → the engine resolves the same BT
+   *   rung on every client (botForTier; identical map+seed → identical bot).
+   * - LOCAL path: a pre-built `brain` (LoopbackTransport has no other clients to
+   *   agree with, so the caller — solo/spectate/offline-room — supplies the exact
+   *   controller it wants: any archetype/version, built from the match seed). A
+   *   `brain` wins over `difficulty` when both are present.
    */
-  bots?: ReadonlyArray<{ slot: number; difficulty: string }>;
+  bots?: ReadonlyArray<{
+    slot: number;
+    difficulty?: string;
+    brain?: IBotController;
+  }>;
   /** Fired after every advanced tick with the post-tick uint32 hash. */
   onTick?: (tickNo: number, hash: number) => void;
+  /**
+   * Fired inside tryAdvanceTick the moment a tick is produced, with the exact
+   * dense slot-ordered InputFrame[] applied + the prev/next states. Used by the
+   * loss recorder to capture a replay; a pure addition (net without a recorder
+   * never sets it). `tick` is the index of the state that was advanced
+   * (prev.tick), matching the recorder's `applyTick` convention.
+   */
+  onAdvance?: (
+    tick: number,
+    inputs: readonly InputFrame[],
+    prev: SimState,
+    next: SimState,
+  ) => void;
 }
 
 /** Snapshot for the HUD/overlay — read, never mutate. */
@@ -101,11 +137,19 @@ export interface LockstepStatus {
 }
 
 export class LockstepEngine {
-  private readonly client: NetClient;
+  private readonly transport: Transport;
   private readonly numPlayers: number;
   private readonly mySlot: number;
   private readonly sampleLocalInput: (forTick: number) => InputFrame;
   private readonly onTick: ((tickNo: number, hash: number) => void) | undefined;
+  private readonly onAdvance:
+    | ((
+        tick: number,
+        inputs: readonly InputFrame[],
+        prev: SimState,
+        next: SimState,
+      ) => void)
+    | undefined;
 
   /** Next sim tick to produce (sim has advanced through currentTick - 1). */
   private currentTick: number;
@@ -132,22 +176,27 @@ export class LockstepEngine {
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(opts: LockstepEngineOptions) {
-    this.client = opts.client;
+    this.transport = opts.transport;
     this.numPlayers = opts.numPlayers;
     this.mySlot = opts.start.slot;
     this.sampleLocalInput = opts.sampleLocalInput;
     this.onTick = opts.onTick;
+    this.onAdvance = opts.onAdvance;
 
     // The wire config (shared/protocol.ts FeelParams) and the client config
     // (config/FeelParams.ts) now share identical field names, so the MatchStart
     // config feeds makeFeelParams directly — no hand-map to drift.
     const feel: FeelParams = makeFeelParams(opts.start.config);
-    // team = slot (teams omitted → default). Computed identically on every
-    // client from the shared seed + roster width, so it never diverges. The
-    // spawn-corner permutation is likewise derived purely from the shared seed,
-    // so every client agrees on it with no extra wire data (no desync).
+    // map/teams come from MatchStart when present, else default (classic + team
+    // = slot) — byte-identical to before for the net path, which omits them.
+    // Both are non-hashed match constants carried identically to every client,
+    // so they never diverge. The spawn-corner permutation is likewise derived
+    // purely from the shared seed, so every client agrees on it with no extra
+    // wire data (no desync). Loopback sets map/teams to request any layout/teams.
     this.curState = createInitialState(opts.start.seed, feel, this.numPlayers, {
       pvp: true,
+      ...(opts.start.map !== undefined ? { map: opts.start.map } : {}),
+      ...(opts.start.teams !== undefined ? { teams: opts.start.teams } : {}),
       spawnOrder: spawnOrderFromSeed(opts.start.seed),
     });
     this.prevState = this.curState;
@@ -160,7 +209,13 @@ export class LockstepEngine {
     // on the wire. Strength = which archetype (played at full strength), so
     // strategyRaw carries the archetype and difficulty stays 'champion'.
     this.botSlots = new Set((opts.bots ?? []).map((b) => b.slot));
-    for (const { slot, difficulty } of opts.bots ?? []) {
+    for (const { slot, difficulty, brain } of opts.bots ?? []) {
+      if (brain !== undefined) {
+        // LOCAL path: caller supplied the exact controller (any archetype/version).
+        this.bots.set(slot, brain);
+        continue;
+      }
+      // NET path: resolve a tier → BT rung identically on every client.
       const rung = botForTier(asTier(difficulty), this.curState.mapKind);
       const module = AI_VERSIONS[rung.version];
       if (module !== undefined) {
@@ -180,7 +235,7 @@ export class LockstepEngine {
     }
 
     this.unsubscribers.push(
-      this.client.on('inputBroadcast', (m) => {
+      this.transport.on('inputBroadcast', (m) => {
         if (m.t < this.currentTick) return; // late echo for a done tick
         const bySlot =
           this.pendingInputs.get(m.t) ?? new Map<number, SlotInput>();
@@ -193,7 +248,7 @@ export class LockstepEngine {
         }
         this.pendingInputs.set(m.t, bySlot);
       }),
-      this.client.on('hashMismatch', (m) => {
+      this.transport.on('hashMismatch', (m) => {
         if (this.desynced) return; // fire recovery once
         this.desynced = true;
         this.lastMismatch = m;
@@ -211,10 +266,10 @@ export class LockstepEngine {
         u.search = '?mode=net';
         window.location.assign(u.toString());
       }),
-      this.client.on('stallNotice', (m) => {
+      this.transport.on('stallNotice', (m) => {
         this.lastStall = m;
       }),
-      this.client.on('playerDisconnect', (m) => {
+      this.transport.on('playerDisconnect', (m) => {
         // Informational only — see the ghost-input note in the header.
         this.disconnected.add(m.slot);
       }),
@@ -232,14 +287,20 @@ export class LockstepEngine {
     if (this.desynced) return;
     this.acc += Math.min(Math.max(dtMs, 0), MAX_UPDATE_DT_MS);
     this.blocked = false;
-    while (this.acc >= TICK_MS) {
+    let steps = 0;
+    while (this.acc >= TICK_MS && steps < MAX_TICKS_PER_FRAME) {
       if (!this.tryAdvanceTick()) {
         this.blocked = true;
         if (this.acc > MAX_ACC_MS) this.acc = MAX_ACC_MS;
         return;
       }
       this.acc -= TICK_MS;
+      steps += 1;
     }
+    // Hit the per-frame tick cap with backlog still pending → drop it so a slow
+    // frame can't snowball into an even longer next frame (see MAX_TICKS_PER_FRAME).
+    // Loopback never freezes; net is additionally bounded by input availability.
+    if (this.acc >= TICK_MS) this.acc = 0;
   }
 
   /** Advance exactly one sim tick if every slot's input is buffered. */
@@ -257,7 +318,7 @@ export class LockstepEngine {
         this.pendingInputs.set(this.nextSendTick, bySlot);
       }
       bySlot.set(this.mySlot, { dirs: frame.dir, actions: frame.action });
-      this.client.sendInput(this.nextSendTick, frame.dir, frame.action);
+      this.transport.sendInput(this.nextSendTick, frame.dir, frame.action);
       this.nextSendTick += 1;
     }
 
@@ -306,11 +367,15 @@ export class LockstepEngine {
 
     const hash = this.curState.stateHash >>> 0;
     if (this.currentTick % HASH_REPORT_INTERVAL === 0) {
-      this.client.sendHashReport(this.currentTick, hash);
+      this.transport.sendHashReport(this.currentTick, hash);
       this.lastHashTick = this.currentTick;
       this.lastHash = hash;
     }
     this.onTick?.(this.currentTick, hash);
+    // Recorder hook: hand over the exact applied inputs + prev/next states. `t`
+    // is the index of the state just advanced (prev.tick), matching the
+    // recorder's applyTick convention.
+    this.onAdvance?.(t, inputs, this.prevState, this.curState);
     return true;
   }
 
@@ -349,7 +414,7 @@ export class LockstepEngine {
     return this.desynced;
   }
 
-  /** Unsubscribe from all NetClient events (the socket is left open). */
+  /** Unsubscribe from all transport events (the socket/loopback stays alive). */
   stop(): void {
     for (const off of this.unsubscribers) off();
     this.unsubscribers.length = 0;

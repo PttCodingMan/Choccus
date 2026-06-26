@@ -25,6 +25,9 @@ export const MsgType = {
   REMOVE_BOT: 0x07,
   MATCH_RESULT: 0x08,
   GET_LEADERBOARD: 0x09,
+  REPLAY_UPLOAD: 0x0a,
+  SET_ROOM_SETTINGS: 0x0b,
+  SET_PLAYER_TEAM: 0x0c,
 
   // Server → Client
   ROOM_STATE: 0x10,
@@ -63,6 +66,14 @@ export interface SlotInput {
   actions: number;
 }
 
+/**
+ * Map layout selector. The sim's MapKind (client/src/sim/Map.ts) is a bare
+ * string alias of the registered map-template keys ('classic', 'pirate', …);
+ * shared/ cannot import from client/, so this mirrors it as `string`. Stays in
+ * sync structurally — any value here feeds createInitialState's `map` option.
+ */
+export type MapKind = string;
+
 export interface RoomPlayer {
   slot: number;
   name: string;
@@ -75,9 +86,15 @@ export interface RoomPlayer {
   botDifficulty?: string;
   /** Conservative rating score (μ − 3σ); shown in the roster. */
   score?: number;
-  /** Body-palette index override for the roster avatar (offline room colour
-   *  picking). Falls back to the slot index when absent. */
-  color?: number;
+  /**
+   * Team id for this slot = the body-palette/colour index (0..MAX_PLAYERS-1).
+   * Teams are MANUAL per-slot: clicking a roster card cycles its team. Default =
+   * the slot index (FFA: everyone on their own team). The relay is the authority
+   * — it carries this in RoomState so every client renders the same team colours,
+   * and the same array goes out in MatchStart.teams. Falls back to the slot index
+   * when absent (older relays / pre-Phase-2 byte-identical default).
+   */
+  team?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +168,72 @@ export interface GetLeaderboardMsg {
   limit?: number;
 }
 
+/** One sim tick's inputs for a replay, dense in slot order. */
+export interface ReplayTick {
+  /** Sim tick index this frame advances (0-based; the tick() that takes
+   *  state.tick from t to t+1). */
+  t: number;
+  /** One {dirs, actions} per slot, length numPlayers. */
+  slots: SlotInput[];
+}
+
+/**
+ * A complete, self-contained match replay uploaded by the loser at OVER.
+ *
+ * Self-sufficient: seed + map + teams + numPlayers + t0 + frozen config + the
+ * full dense per-tick inputs reproduce the match bit-for-bit (same determinism
+ * contract as the sim-runner Replay fixture — the relay can derive a fixture
+ * from this with no extra data). MessagePack-friendly: only plain
+ * objects/arrays/numbers/strings. Phase 2b adds the actual storage; Phase 1
+ * only locks the shape.
+ */
+export interface ReplayUploadMsg {
+  type: typeof MsgType.REPLAY_UPLOAD;
+  /** Shared PRNG seed (uint32) — map + drops derive from it. */
+  seed: number;
+  /** Map layout the match ran on. */
+  map: MapKind;
+  /** Team id per slot (length numPlayers; FFA = [0,1,2,…]). */
+  teams: number[];
+  /** Player count (= teams.length = each ReplayTick.slots length). */
+  numPlayers: number;
+  /** First sim tick the match stepped from (matches MatchStart.t0). */
+  t0: number;
+  /** Frozen feel parameters used for the whole match. */
+  config: FeelParams;
+  /** Every advanced tick's inputs, dense in slot order, in tick order. */
+  inputs: ReplayTick[];
+  /** Outcome relative to the uploading (local) player. */
+  result: 'win' | 'loss' | 'draw';
+  /** Absolute winning team (= winning slot in FFA), or null for a draw. */
+  winnerTeam: number | null;
+}
+
+/**
+ * Host-only map pick, changed in the lobby. The relay stores it on the room,
+ * reflects it in RoomState, and sends it in MatchStart. Sent from a non-host
+ * slot is ignored server-side.
+ */
+export interface SetRoomSettingsMsg {
+  type: typeof MsgType.SET_ROOM_SETTINGS;
+  /** Map layout key (one of MAP_KINDS); invalid values ignored. */
+  map: MapKind;
+}
+
+/**
+ * Manual per-slot team assignment (click a roster card to cycle its team). The
+ * relay enforces permissions: the HOST (lowest-slot human) may set ANY slot; a
+ * non-host may set ONLY its own slot. `team` is the palette/colour index
+ * (0..MAX_PLAYERS-1). Ignored once the match is playing; malformed dropped.
+ */
+export interface SetPlayerTeamMsg {
+  type: typeof MsgType.SET_PLAYER_TEAM;
+  /** The slot whose team to change. */
+  slot: number;
+  /** New team id (= colour index, 0..MAX_PLAYERS-1). */
+  team: number;
+}
+
 export type ClientMsg =
   | JoinRoomMsg
   | LeaveRoomMsg
@@ -160,7 +243,10 @@ export type ClientMsg =
   | MatchResultMsg
   | InputFrameMsg
   | HashReportMsg
-  | GetLeaderboardMsg;
+  | GetLeaderboardMsg
+  | ReplayUploadMsg
+  | SetRoomSettingsMsg
+  | SetPlayerTeamMsg;
 
 // ---------------------------------------------------------------------------
 // Server → Client
@@ -173,6 +259,13 @@ export interface RoomStateMsg {
   /** Receiver's own slot index. */
   youSlot: number;
   players: RoomPlayer[];
+  /**
+   * Host's current map pick. Optional: omitted by older relays → the client
+   * shows the default ('classic'). Reflects SetRoomSettings so every client's
+   * picker stays in sync with the host. Per-slot teams live on each RoomPlayer
+   * (`team`), mutated by SetPlayerTeam.
+   */
+  map?: MapKind;
 }
 
 export interface MatchStartMsg {
@@ -185,6 +278,20 @@ export interface MatchStartMsg {
   config: FeelParams;
   /** First sim tick (clients start stepping from here). */
   t0: number;
+  /**
+   * Map layout for the whole match (whose grid tiles ARE hashed). Optional:
+   * omitted by the relay today → every client defaults to 'classic'
+   * (byte-identical to before). The in-process loopback transport sets it so
+   * solo/spectate/offline-room can request any registered map.
+   */
+  map?: MapKind;
+  /**
+   * Team id per slot (a non-hashed match constant), one entry per slot. Manual
+   * teams: the relay sends the room's full per-slot teams array (default
+   * team[i] = i). Optional only so an untouched default room can omit it and stay
+   * byte-identical (omitted → engine defaults team = slot, == the default array).
+   */
+  teams?: number[];
 }
 
 /** All slots' inputs for sim tick t; clients only step once a tick is complete. */

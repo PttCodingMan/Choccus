@@ -161,13 +161,40 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     if (renderer !== null) renderer.canvas.style.display = 'none';
   };
 
+  // -- net room host settings + manual teams ------------------------------------
+  // The host = the lowest-slot HUMAN (matches the relay's host_slot). Only the
+  // host may change the map / any slot's team; a non-host may change ONLY its own
+  // team. The map picker reflects RoomState; teams are per-slot on each player
+  // (clicking a roster card cycles its team — wired via ui.onCycleTeam).
+
+  const isLocalHost = (state: RoomStateMsg): boolean => {
+    const humanSlots = state.players
+      .filter((p) => !p.isBot)
+      .map((p) => p.slot);
+    return humanSlots.length > 0 && Math.min(...humanSlots) === state.youSlot;
+  };
+
+  /** Show the relay room view + the host map picker (net rooms). The colour
+   *  picker is hidden (net teams are per-slot manual via card clicks); the map
+   *  picker is enabled only for the host. Card click-to-cycle is gated by
+   *  `teamEditable` (host: any card; non-host: own card only). */
+  const showNetRoom = (state: RoomStateMsg): void => {
+    const host = isLocalHost(state);
+    ui.setTeamEditable((slot) => host || slot === state.youSlot);
+    ui.showRoom(state);
+    ui.setHostSettings({ map: state.map ?? 'classic', host });
+  };
+
   // -- lobby events → screens ---------------------------------------------------
 
   lobby.onRoomState = (state: RoomStateMsg): void => {
     overlay?.setRoomState(state);
     lastRoomId = state.roomId;
     if (screen === 'room') {
-      ui.showRoom(state);
+      // Only the relay path reaches here (the offline LocalRoom renders itself);
+      // show the room + the host map picker + per-slot team colours from state.
+      if (localRoom === null) showNetRoom(state);
+      else ui.showRoom(state);
     } else if (screen === 'result') {
       // Someone pressed Rematch: the room is back in LOBBY — show progress.
       const ready = state.players.filter((p) => p.connected && p.ready).length;
@@ -218,12 +245,20 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     ui.showMatch();
     ui.setMatchNotice(null);
     runner = new MatchRunner({
-      client,
+      transport: client,
       start,
       numPlayers,
       bots,
       renderer,
       keyboard,
+      // Capture the match; on OVER if WE lost, hand the replay up for upload
+      // (the relay-side storage is Phase 2b — uploadReplay() is wired, dormant).
+      record: 'humanLoss',
+      onReplayReady: (replay) => {
+        // On a net loss, upload the self-contained replay so the relay can store
+        // it for offline analysis (Phase 2b storage is live; see relay/replays.py).
+        client.uploadReplay(replay);
+      },
       onStatus: (s) => updateMatchStatus(s),
       onOver: (result, _final, winnerTeam) => {
         screen = 'result';
@@ -316,7 +351,7 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
       const state = await lobby.joinAndWait(roomId, playerName);
       lastRoomId = state.roomId;
       screen = 'room';
-      ui.showRoom(state);
+      showNetRoom(state);
     } catch (err) {
       screen = 'landing';
       ui.showLanding(`Could not join: ${errText(err)}`);
@@ -334,9 +369,18 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     localRoom !== null ? localRoom.addBot(slot, difficulty) : lobby.addBot(slot, difficulty);
   ui.onRemoveBot = (slot) =>
     localRoom !== null ? localRoom.removeBot(slot) : lobby.removeBot(slot);
-  // Host settings exist only on the offline room (relay rooms hide the row).
-  ui.onSelectMap = (map) => localRoom?.setMap(map);
-  ui.onSelectFormat = (format) => localRoom?.setFormat(format);
+  // Host map pick: offline → LocalRoom; net → SET_ROOM_SETTINGS (relay ignores
+  // non-hosts). Manual teams: clicking a roster card cycles that slot's team —
+  // offline applies locally; net sends SET_PLAYER_TEAM (relay enforces host:any /
+  // non-host:own). The standalone colour picker is offline-only.
+  ui.onSelectMap = (map) => {
+    if (localRoom !== null) localRoom.setMap(map);
+    else lobby.setRoomSettings(map);
+  };
+  ui.onCycleTeam = (slot, nextTeam) => {
+    if (localRoom !== null) localRoom.setPlayerTeam(slot, nextTeam);
+    else lobby.setPlayerTeam(slot, nextTeam);
+  };
   ui.onSelectColor = (color) => localRoom?.setColor(color);
   ui.setSuggestedTier(suggestedTier()); // seed the "+ Bot" picker from local DDA
   ui.onLeaveRoom = () => {
@@ -359,7 +403,7 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
     stopRunner();
     lobby.setReady(false); // also resets the room if we're the first one back
     screen = 'room';
-    if (lobby.roomState !== null) ui.showRoom(lobby.roomState);
+    if (lobby.roomState !== null) showNetRoom(lobby.roomState);
   };
   ui.onSolo = () => {
     // Open an offline room (alone-vs-bots, no relay) in-place — no page reload.

@@ -25,6 +25,16 @@ async def recv_until(ws, type_id: int, timeout: float = 2.0) -> dict:
                 return payload
 
 
+async def recv_room_where(ws, predicate, timeout: float = 2.0) -> dict:
+    """Drain RoomState frames until one satisfies `predicate` (robust to the
+    several broadcasts that pile up across joins / settings changes)."""
+    async with asyncio.timeout(timeout):
+        while True:
+            tid, payload = decode(await ws.recv())
+            if tid == MsgType.ROOM_STATE and predicate(payload):
+                return payload
+
+
 async def with_server(test_body):
     relay = RelayServer(db_path=":memory:")
     async with serve(relay.handler, "localhost", 0) as server:
@@ -48,6 +58,7 @@ def test_two_clients_join_ready_matchstart_and_tick_relay():
                     "ready": False,
                     "connected": True,
                     "score": 0.0,
+                    "team": 0,  # default team = slot
                 }
             ]
 
@@ -191,6 +202,178 @@ def test_oversized_join_fields_are_truncated_not_crashing():
 
     asyncio.run(with_server(body))
 
+
+def _team_of(state: dict, slot: int) -> int | None:
+    for p in state["players"]:
+        if p["slot"] == slot:
+            return p.get("team")
+    return None
+
+
+def test_host_map_and_team_reflected_and_match_start_carries_them():
+    # Host picks the map + regroups teams by clicking cards (SET_PLAYER_TEAM) →
+    # RoomState reflects both on every client; MatchStart carries map + the manual
+    # per-slot teams array (single authority).
+    async def body(url: str):
+        async with connect(url) as a, connect(url) as b:
+            await a.send(protocol.join_room("", "alice"))
+            state = await recv_until(a, MsgType.ROOM_STATE)
+            room_id = state["roomId"]
+            assert state["map"] == "classic"  # default
+            assert _team_of(state, 0) == 0  # default team = slot
+            await b.send(protocol.join_room(room_id, "bob"))
+            await recv_until(b, MsgType.ROOM_STATE)
+
+            # Host (slot 0) picks pirate; both clients see it.
+            await a.send(protocol.set_room_settings("pirate"))
+            for ws in (a, b):
+                await recv_room_where(ws, lambda p: p["map"] == "pirate")
+
+            # Host puts bob (slot 1) onto team 0 (a 2-player co-op); reflected.
+            await a.send(protocol.set_player_team(1, 0))
+            for ws in (a, b):
+                await recv_room_where(ws, lambda p: _team_of(p, 1) == 0)
+
+            # Start: MatchStart carries map + full per-slot teams [0, 0].
+            await a.send(protocol.ready_toggle(True))
+            await b.send(protocol.ready_toggle(True))
+            start_a = await recv_until(a, MsgType.MATCH_START)
+            start_b = await recv_until(b, MsgType.MATCH_START)
+            for s in (start_a, start_b):
+                assert s["map"] == "pirate"
+                assert s["teams"] == [0, 0]
+
+    asyncio.run(with_server(body))
+
+
+def test_non_host_team_permissions_over_wire():
+    # A non-host may set ONLY its own team; a cross-slot attempt is ignored.
+    async def body(url: str):
+        async with connect(url) as a, connect(url) as b:
+            await a.send(protocol.join_room("", "alice"))
+            state = await recv_until(a, MsgType.ROOM_STATE)
+            await b.send(protocol.join_room(state["roomId"], "bob"))
+            await recv_until(b, MsgType.ROOM_STATE)
+
+            # bob (slot 1, non-host) sets his OWN team → applied on both clients.
+            await b.send(protocol.set_player_team(1, 2))
+            for ws in (a, b):
+                await recv_room_where(ws, lambda p: _team_of(p, 1) == 2)
+
+            # bob tries to set alice's (slot 0) team → ignored (no broadcast).
+            await b.send(protocol.set_player_team(0, 2))
+            with pytest.raises(TimeoutError):
+                await recv_room_where(a, lambda p: _team_of(p, 0) == 2, timeout=0.3)
+
+    asyncio.run(with_server(body))
+
+
+def test_match_start_carries_2v2_teams_over_wire():
+    # Host groups 4 players into 2v2 (slots 0&3 vs 1&2) by clicking cards →
+    # MatchStart teams = [0,1,1,0] on every client.
+    async def body(url: str):
+        async with connect(url) as a, connect(url) as b, connect(url) as c, connect(
+            url
+        ) as d:
+            await a.send(protocol.join_room("", "alice"))
+            state = await recv_until(a, MsgType.ROOM_STATE)
+            room_id = state["roomId"]
+            for ws, name in ((b, "bob"), (c, "carol"), (d, "dave")):
+                await ws.send(protocol.join_room(room_id, name))
+                await recv_until(ws, MsgType.ROOM_STATE)
+            # Host regroups: slots 1,2 → team 1; slot 3 → team 0 (0&3 vs 1&2).
+            await a.send(protocol.set_player_team(1, 1))
+            await a.send(protocol.set_player_team(2, 1))
+            await a.send(protocol.set_player_team(3, 0))
+            await recv_room_where(a, lambda p: _team_of(p, 3) == 0)
+            for ws in (a, b, c, d):
+                await ws.send(protocol.ready_toggle(True))
+            for ws in (a, b, c, d):
+                start = await recv_until(ws, MsgType.MATCH_START)
+                assert start["teams"] == [0, 1, 1, 0]
+                assert "map" not in start  # classic = default → omitted
+
+    asyncio.run(with_server(body))
+
+
+def test_replay_upload_is_stored(tmp_path, monkeypatch):
+    # A REPLAY_UPLOAD over the wire is validated + written to the replay dir.
+    import relay.replays as replays_mod
+
+    monkeypatch.setattr(replays_mod, "DEFAULT_REPLAY_DIR", str(tmp_path))
+
+    async def body(url: str):
+        async with connect(url) as a:
+            await a.send(protocol.join_room("", "alice"))
+            await recv_until(a, MsgType.ROOM_STATE)
+            inputs = [
+                {"t": 0, "slots": [{"dirs": 1, "actions": 0}, {"dirs": 0, "actions": 0}]},
+                {"t": 1, "slots": [{"dirs": 0, "actions": 1}, {"dirs": 8, "actions": 0}]},
+            ]
+            await a.send(
+                protocol.replay_upload(
+                    seed=777,
+                    map_="classic",
+                    teams=[0, 1],
+                    num_players=2,
+                    t0=0,
+                    config={"moveSpeed": 5.0, "cornerAssist": 0.25, "inputBufferMs": 120},
+                    inputs=inputs,
+                    result="loss",
+                    winner_team=1,
+                )
+            )
+            # The relay sends no reply for an upload; poll the dir for the write.
+            async with asyncio.timeout(2.0):
+                while not list(tmp_path.iterdir()):
+                    await asyncio.sleep(0.02)
+
+    asyncio.run(with_server(body))
+    written = list(tmp_path.iterdir())
+    assert len(written) == 1
+    import json
+
+    doc = json.loads(written[0].read_text())
+    assert doc["seed"] == 777
+    assert doc["schema"] == "choccus-replay-upload-v1"
+
+
+def test_oversized_replay_upload_does_not_crash_room(tmp_path, monkeypatch):
+    # A bogus over-cap upload is dropped; the room stays alive (a follow-up
+    # message still works).
+    import relay.replays as replays_mod
+    from relay.constants import MAX_REPLAY_TICKS
+
+    monkeypatch.setattr(replays_mod, "DEFAULT_REPLAY_DIR", str(tmp_path))
+
+    async def body(url: str):
+        async with connect(url) as a, connect(url) as b:
+            await a.send(protocol.join_room("", "alice"))
+            state = await recv_until(a, MsgType.ROOM_STATE)
+            huge = [
+                {"t": t, "slots": [{"dirs": 0, "actions": 0}, {"dirs": 0, "actions": 0}]}
+                for t in range(MAX_REPLAY_TICKS + 2)
+            ]
+            await a.send(
+                protocol.replay_upload(
+                    seed=1,
+                    map_="classic",
+                    teams=[0, 1],
+                    num_players=2,
+                    t0=0,
+                    config={"moveSpeed": 5.0, "cornerAssist": 0.25, "inputBufferMs": 120},
+                    inputs=huge,
+                    result="loss",
+                    winner_team=0,
+                )
+            )
+            # Room still responds: a second client can join and get a roster.
+            await b.send(protocol.join_room(state["roomId"], "bob"))
+            rs = await recv_until(b, MsgType.ROOM_STATE)
+            assert [p["name"] for p in rs["players"]] == ["alice", "bob"]
+
+    asyncio.run(with_server(body))
+    assert list(tmp_path.iterdir()) == []  # nothing stored
 
 def test_join_named_room_auto_creates_it():
     # Joining a room id that does not exist creates it under that id, so two
