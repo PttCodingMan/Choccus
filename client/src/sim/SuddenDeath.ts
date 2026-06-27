@@ -8,10 +8,10 @@
  *
  * Mechanic: from SUDDEN_DEATH_START_TICK, one tile per
  * SUDDEN_DEATH_TILE_INTERVAL ticks turns HARD, walking an inward spiral from the
- * grid's true outermost ring (row/col 0) to the center. An alive player standing on a
- * tile the instant it hardens is crushed — eliminated outright (a fully
- * solidified tile entombs; this is NOT a melt-flow sugar shell, so there is no
- * rescue or timeout window). The encroaching wall is just HARD bricks, so
+ * grid's true outermost ring (row/col 0) to the center. An alive player whose
+ * one-tile body footprint overlaps a tile the instant it hardens is crushed —
+ * eliminated outright (a fully solidified tile entombs; this is NOT a melt-flow
+ * sugar shell, so there is no rescue or timeout window). The encroaching wall is just HARD bricks, so
  * movement, melt-flow arms and the AI's grid/danger views all respect it for
  * free — no mirror needed.
  */
@@ -23,7 +23,7 @@ import {
 } from '../../../shared/constants';
 import { TileKind } from '../../../shared/types';
 import { type TileGrid, idx } from './Map';
-import { type PlayerState, tileOf } from './Player';
+import { type PlayerState, bodyOverlapsTile } from './Player';
 
 /**
  * Inward-spiral order over the WHOLE grid (x in 0..COLS-1, y in 0..ROWS-1): the
@@ -84,7 +84,11 @@ export function stepSuddenDeath(
     const y = cell[1]!;
     grid[idx(x, y)] = TileKind.HARD;
     for (const p of players) {
-      if (p.alive && tileOf(p.posX) === x && tileOf(p.posY) === y) {
+      // Crush any alive player whose one-tile BODY FOOTPRINT overlaps the freshly
+      // hardened tile — not just whose nearest-centre tile equals it. A body
+      // straddling into the tile (centre rounding elsewhere) would otherwise dodge
+      // the entomb and then glide through the new HARD wall (see advanceAxis).
+      if (p.alive && bodyOverlapsTile(p.posX, p.posY, x, y)) {
         p.alive = false;
         p.trapped = false;
         p.trappedTicks = 0;

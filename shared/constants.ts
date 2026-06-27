@@ -160,8 +160,8 @@ export const SPEED_BONUS_CAP = 3.0;
 
 /** Move speed in tiles/s (range 3–8). */
 export const DEFAULT_MOVE_SPEED = 5.0;
-/** Corner-assist tolerance in tiles (range 0–0.5). */
-export const DEFAULT_CORNER_ASSIST = 0.25;
+/** Corner-assist tolerance in tiles (range 0–0.8). */
+export const DEFAULT_CORNER_ASSIST = 0.65;
 /** Input buffer in ms (range 0–250). */
 export const DEFAULT_INPUT_BUFFER_MS = 120;
 

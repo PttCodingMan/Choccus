@@ -1,22 +1,22 @@
 /**
- * Player state + the shared corridor grid-movement helper.
+ * Player state + the shared free-movement helper.
  *
- * Movement model (from spec, all integer millitiles):
- * - Coordinates are millitiles; an integer multiple of MILLITILE is a tile
- *   center. Invariant: an entity is ALWAYS exactly aligned on at least one
- *   axis (it lives on corridor centerlines); every move preserves this.
- * - Straight movement: advance along the held axis; when the tile ahead of
- *   the current tile center is blocked (not walkable OR holds a bomb), clamp
- *   at the current tile center (never move backward). Per-tick speed is far
- *   below half a tile, so at most one center is crossed per tick.
- * - Corner assist: pressing a perpendicular direction while off-center is
- *   allowed when the offset from a candidate corridor centerline is within
- *   (0.5 + tolerance) tiles AND the opening tile in the pressed direction at
- *   that row/column is open. The entity slides along the perpendicular axis
- *   at full move speed toward the centerline; leftover per-tick speed after
- *   reaching the centerline is spent along the pressed axis. Both candidate
- *   centerlines (nearest first, then the far one) are tested in that fixed
- *   order — part of the determinism contract.
+ * Movement model (all integer millitiles) — FREE AABB movement:
+ * - Coordinates are millitiles; the entity is a one-tile square body that may
+ *   sit off-grid on BOTH axes. There is no "always aligned on one axis"
+ *   invariant: in open space you glide freely in any of the four directions.
+ * - Collision: moving along an axis, the body stops flush against the first
+ *   solid tile (non-walkable OR a bomb) it is not already standing in. A
+ *   one-tile-wide corridor therefore fences the body to its centreline by
+ *   collision alone — that is geometry, not a "correction". Per-tick speed is
+ *   far below half a tile, so at most one tile boundary is crossed per tick;
+ *   the just-placed bomb sits on the current tile, so walking off it is free.
+ * - Corner-slide (the ONLY assist): when a move is fully blocked AND the body
+ *   is off-grid on the perpendicular axis, it slides toward a candidate lane
+ *   whose opening ahead is clear to round the corner; leftover speed is then
+ *   spent advancing. Two candidate lanes are tried in a FIXED order — the near
+ *   lane, then the far lane the body leans into (determinism contract). It needs
+ *   a blocking wall, so it never fires during a free open-space glide.
  * - Input: latest-press priority stack + buffered retry (see InputBuffer.ts).
  */
 import {
@@ -153,72 +153,165 @@ export function isOpen(
 }
 
 /**
- * Straight movement along one axis. `a` is the coordinate on the movement
- * axis, `bTile` the (aligned) perpendicular tile index. Movement only ever
- * checks the tile AHEAD, so an entity standing on a bomb tile can walk off.
+ * The FAR perpendicular tile a body centred at `b` overlaps on that axis, given
+ * its NEAR (nominal) tile `near = tileOf(b)`: the one neighbour it leans into
+ * when off-grid, or `near` itself when perfectly centred. The pair (near, far)
+ * is the two perpendicular tiles the body can straddle; returning the far tile
+ * as a plain scalar keeps the hot path allocation-free (no [near, far] tuple per
+ * call). Callers scan the same fixed shape: near first, then far when distinct.
  */
-function moveStraight(
-  open: (aTile: number, bTile: number) => boolean,
-  a: number,
-  bTile: number,
-  sign: number,
-  speed: number,
-): number {
-  const c = tileOf(a);
-  let na = a + sign * speed;
-  if (!open(c + sign, bTile)) {
-    // Blocked ahead: advance at most to the current tile center, never back.
-    if (sign > 0) na = Math.min(na, Math.max(a, c * MILLITILE));
-    else na = Math.max(na, Math.min(a, c * MILLITILE));
-  }
-  return na;
+function perpFar(b: number, near: number): number {
+  const off = b - near * MILLITILE;
+  return off === 0 ? near : near + (off > 0 ? 1 : -1);
 }
 
 /**
- * One movement attempt along axis `a` (sign ±1) with perpendicular coordinate
- * `b`. Returns [newA, newB, moved]. Handles both straight movement and
- * corner assist (perpendicular slide at full speed, remainder spent on `a`).
+ * Whether the one-tile body centred at (posX, posY) overlaps tile (x, y) with
+ * POSITIVE area. The body spans [posX±HALF, posY±HALF); on each axis it covers
+ * its nominal tile plus, when off-grid, the one neighbour it straddles into —
+ * exactly the (near, far) pair `tileOf`/`perpFar` give (overlap there is the
+ * off-centre offset, always > 0). This is the AABB footprint used by sudden-death
+ * crush: any tile the body touches, not merely its nearest-centre tile. Pure integer.
  */
-function stepAxis(
-  open: (aTile: number, bTile: number) => boolean,
+export function bodyOverlapsTile(
+  posX: number,
+  posY: number,
+  x: number,
+  y: number,
+): boolean {
+  const pxNear = tileOf(posX);
+  const pxFar = perpFar(posX, pxNear);
+  const pyNear = tileOf(posY);
+  const pyFar = perpFar(posY, pyNear);
+  return (x === pxNear || x === pxFar) && (y === pyNear || y === pyFar);
+}
+
+/**
+ * Advance `a` (movement-axis position) by up to `speed` in direction `s` (±1),
+ * stopping the one-tile body flush against the first blocking leading-edge tile.
+ * `solidAt` = not enterable (a wall OR a bomb); `wallAt` = a wall ONLY (ignores
+ * bombs). The leading-edge tile is checked with the right predicate by case:
+ *  - a NEW tile is entered (`newFront !== curFront`): block on `solidAt` — you
+ *    cannot glide into a fresh wall OR bomb tile ahead;
+ *  - no new tile (the leading edge is one the body ALREADY straddles): block only
+ *    on `wallAt`. This is what stops a body from gliding DEEPER through a tile
+ *    that turned solid mid-match (sudden-death hardening) — yet still lets the
+ *    player walk OFF its own just-placed bomb, which sits on a tile it already
+ *    occupies (a bomb is not a wall).
+ * Per-tick speed < HALF, so at most one new tile is entered. Clamps flush at
+ * `newFront`'s near edge (centre one tile back). Returns [newA, blockedTile|null]
+ * (the tile that stopped us, for corner-slide).
+ */
+function advanceAxis(
+  solidAt: (at: number, bt: number) => boolean,
+  wallAt: (at: number, bt: number) => boolean,
+  a: number,
+  perpNear: number,
+  perpFarTile: number,
+  s: number,
+  speed: number,
+): [number, number | null] {
+  const aNew = a + s * speed;
+  // Tiles span [T·MILLITILE − HALF, T·MILLITILE + HALF), so the leading-edge
+  // tile = the outermost tile the body still occupies on the moving side: for
+  // +s the rightmost-occupied tile, for −s the leftmost (the body is one tile
+  // wide, so this is one off the body centre's tile).
+  const curFront =
+    s > 0 ? Math.floor((a + MILLITILE - 1) / MILLITILE) : Math.floor(a / MILLITILE);
+  const newFront =
+    s > 0 ? Math.floor((aNew + MILLITILE - 1) / MILLITILE) : Math.floor(aNew / MILLITILE);
+  // Entering a NEW tile blocks on walls AND bombs; staying within an already-
+  // straddled tile blocks only on walls (so you can leave your own bomb tile).
+  const blocks = newFront === curFront ? wallAt : solidAt;
+  if (
+    blocks(newFront, perpNear) ||
+    (perpFarTile !== perpNear && blocks(newFront, perpFarTile))
+  ) {
+    const clamped = s > 0 ? (newFront - 1) * MILLITILE : (newFront + 1) * MILLITILE;
+    return [s > 0 ? Math.min(aNew, clamped) : Math.max(aNew, clamped), newFront];
+  }
+  return [aNew, null];
+}
+
+/**
+ * Move one tick along axis `a` (perpendicular pos `b`). Free AABB movement: in
+ * open space the body slides anywhere (both axes off-grid), corridors fence it
+ * to the centreline by collision alone. The ONLY assist is a corner-slide that
+ * fires when movement is fully blocked AND the body is off-grid on `b`: it then
+ * aligns toward a candidate lane whose opening ahead is clear and rounds the
+ * corner. Both candidate lanes are tried in the SAME fixed deterministic order
+ * as the old corridor model — the NEAR lane first, then the FAR lane the body
+ * leans into — so a body leaning into the far row can still round the corner.
+ *
+ * `tolMt` is the TIGHTNESS THRESHOLD: a lane only qualifies for corner-assist
+ * when the body is within `tolMt` millitiles of that lane's centre. tolMt = 0 ⇒
+ * must be essentially aligned (no assist); tolMt = 500 (½ tile) ⇒ assist up to
+ * half a tile (the near lane is ≤½ tile away, the far lane ≥½ tile, so only wide
+ * tolerances reach the far lane). Smaller = stricter / less forgiving.
+ *
+ * Corner-cut (no sideways shuffle): the qualifying lane `r` is one the body
+ * ALREADY overlaps (the near lane it sits in, or the far lane it leans into), so
+ * snapping `b` straight to `r`'s centre in a SINGLE tick moves only TOWARD a tile
+ * the footprint already covers — it shrinks/relocates the straddle and enters NO
+ * new perpendicular tile, hence is clip-safe at any distance ≤ ½ tile (the gate
+ * caps the snap at `tolMt` ≤ 500). After the snap the body is dead-centre on `r`
+ * (footprint = just lane `r`, whose opening ahead is verified open), so it then
+ * advances forward by the full per-tick `speed` THE SAME TICK via `advanceAxis`
+ * (which clamps flush on any wall further ahead). The result is a true diagonal
+ * round-the-corner: forward + perpendicular in one tick, never the old multi-tick
+ * "drift sideways with zero forward progress" hitch. The forward step is gated on
+ * the POST-snap footprint (lane `r` only), so we never advance while still
+ * overlapping the blocking wall lane.
+ *
+ * Because it needs a blocking wall, it never fires in the open. Returns [newA, newB].
+ */
+function moveAxis(
+  solidAt: (at: number, bt: number) => boolean,
+  wallAt: (at: number, bt: number) => boolean,
   a: number,
   b: number,
-  sign: number,
+  s: number,
   speed: number,
   tolMt: number,
-): [number, number, boolean] {
-  const bNear = tileOf(b);
-  const offB = b - bNear * MILLITILE;
-  if (offB === 0) {
-    const na = moveStraight(open, a, bNear, sign, speed);
-    return [na, b, na !== a];
+): [number, number] {
+  const near = tileOf(b);
+  const far = perpFar(b, near);
+  const [a1, blockedTile] = advanceAxis(solidAt, wallAt, a, near, far, s, speed);
+  if (a1 !== a) return [a1, b]; // progressed on the movement axis → no slide
+  if (blockedTile === null) return [a, b]; // not wall-blocked → no corner-slide
+  const off = b - near * MILLITILE;
+  if (off === 0) return [a, b]; // dead-centre on `b` → nothing to slide toward
+  const lean = off > 0 ? 1 : -1;
+  // Fixed candidate order: NEAR lane, then the FAR lane the body leans into.
+  // Both are lanes the footprint ALREADY overlaps (near = it sits in, far = it
+  // leans into), so snapping toward either never enters a new perpendicular tile.
+  for (const r of [near, near + lean] as const) {
+    // Tightness gate: the body must be within `tolMt` of lane `r`'s centre for
+    // the turn-assist to kick in (smaller = stricter). The far lane's centre is
+    // ≥½ tile away, so it only qualifies at wide tolerances.
+    if (Math.abs(b - r * MILLITILE) > tolMt) continue;
+    // The opening ahead in lane `r` must be clear; the far lane must also be
+    // enterable to slide into it (it is one tile off the body's nominal lane).
+    if (solidAt(blockedTile, r)) continue;
+    if (r !== near && solidAt(blockedTile - s, r)) continue;
+    // Snap straight to lane `r`'s centre this tick (clip-safe: moving toward an
+    // already-overlapped lane enters no new perpendicular tile — see header).
+    const b1 = r * MILLITILE;
+    // Now dead-centre on `r`; spend the full per-tick budget advancing forward.
+    // advanceAxis checks lane `r` only (post-snap footprint) and clamps flush on
+    // any wall further ahead, so the diagonal never tunnels.
+    const [a2] = advanceAxis(solidAt, wallAt, a, r, r, s, speed);
+    return [a2, b1];
   }
-  // Corner assist. By the alignment invariant, `a` is at a tile center here.
-  const aTile = tileOf(a);
-  const candidates = [bNear, bNear + (offB > 0 ? 1 : -1)];
-  for (const r of candidates) {
-    const dist = b > r * MILLITILE ? b - r * MILLITILE : r * MILLITILE - b;
-    if (dist > MILLITILE / 2 + tolMt) continue;
-    if (!open(aTile + sign, r)) continue;
-    // Sliding to the far centerline also enters that tile — it must be open.
-    if (r !== bNear && !open(aTile, r)) continue;
-    const dirB = r * MILLITILE > b ? 1 : -1;
-    const slide = Math.min(speed, dist);
-    const nb = b + dirB * slide;
-    let na = a;
-    const rest = speed - slide;
-    if (rest > 0 && nb === r * MILLITILE) {
-      na = moveStraight(open, a, r, sign, rest);
-    }
-    return [na, nb, true];
-  }
-  return [a, b, false];
+  return [a, b];
 }
 
 /**
  * Attempt to move an entity one tick in `dir`. Pure: returns
- * [newPosX, newPosY, moved]. `tolMt` = corner-assist tolerance in millitiles
- * (players: params.cornerAssistMt).
+ * [newPosX, newPosY, moved]. `tolMt` is the corner-assist tightness threshold
+ * (millitiles): a lane only qualifies for the turn-assist slide when the body is
+ * within `tolMt` of its centre (see `moveAxis`). Smaller = stricter / less
+ * forgiving; live-tunable via the ⚙ "Corner assist" slider.
  */
 export function stepEntity(
   grid: TileGrid,
@@ -231,36 +324,38 @@ export function stepEntity(
 ): [number, number, boolean] {
   const dx = dirDX(dir);
   if (dx !== 0) {
-    return stepAxis(
-      (at, bt) => isOpen(grid, bombs, at, bt),
+    const [nx, ny] = moveAxis(
+      (at, bt) => !isOpen(grid, bombs, at, bt), // wall or bomb
+      (at, bt) => !isWalkable(grid, at, bt), // wall only (ignore bombs)
       posX,
       posY,
       dx,
       speedMt,
       tolMt,
     );
+    return [nx, ny, nx !== posX || ny !== posY];
   }
   const dy = dirDY(dir);
   if (dy !== 0) {
-    const [na, nb, moved] = stepAxis(
-      (at, bt) => isOpen(grid, bombs, bt, at),
+    // axis a = Y, axis b = X → swap the tile args into isOpen / isWalkable(x, y).
+    const [ny, nx] = moveAxis(
+      (at, bt) => !isOpen(grid, bombs, bt, at),
+      (at, bt) => !isWalkable(grid, bt, at),
       posY,
       posX,
       dy,
       speedMt,
       tolMt,
     );
-    return [nb, na, moved];
+    return [nx, ny, nx !== posX || ny !== posY];
   }
   return [posX, posY, false];
 }
 
 /**
- * Try to push a PUSH brick one tile in direction `dir`. MUTATES `grid` (the
- * caller's per-tick clone) and returns true on a successful shove. Fires only
- * when the player is EXACTLY centered on a tile (both axes aligned), the tile
- * directly ahead is a PUSH brick, and the tile beyond it is open (walkable +
- * bomb-free). The brick slides one tile; the player does NOT advance this tick.
+ * Try to push a PUSH brick one tile in direction `dir` (the brick directly
+ * ahead in the player's lane, tile beyond it open). The brick slides one tile;
+ * the player does NOT advance this tick.
  *
  * This self-throttles: after a push the brick is one tile ahead with a gap, so
  * the player must walk back up to it (~one tile at move speed) before pushing
@@ -272,10 +367,19 @@ export function stepEntity(
  * tick step (1), so a brick player i pushes is visible to player i+1 that tick.
  */
 /**
- * Whether a PUSH brick directly ahead in `dir` could be shoved one tile (player
- * dead-centered, brick ahead, tile beyond open). Does NOT mutate — the actual
- * shove is gated behind a charge (see stepPlayerMovement) so heavy crates need
- * sustained force. `applyPush` performs the move once the charge is full.
+ * Whether a PUSH brick directly ahead in `dir` could be shoved one tile. Does
+ * NOT mutate — the actual shove is gated behind a charge (see stepPlayerMovement)
+ * so heavy crates need sustained force. `applyPush` performs the move once the
+ * charge is full.
+ *
+ * Stance under free AABB movement: the player must be squarely in the brick's
+ * LANE and flush against it, NOT dead-centre on both axes. Concretely:
+ *  - centred on the MOVEMENT axis (flush against the brick — collision clamps the
+ *    body to the tile centre directly behind a solid brick), and
+ *  - aligned in the brick's lane on the PERPENDICULAR axis: its nearest tile is
+ *    the brick's row/column (`tileOf(perp) === brick perp tile`). The perpendicular
+ *    coordinate may be off-grid (the player walked in from open space) — requiring
+ *    dead-centre there left bricks unpushable forever.
  */
 function canPush(
   grid: TileGrid,
@@ -284,12 +388,13 @@ function canPush(
   posY: number,
   dir: number,
 ): boolean {
-  // Require a dead-center stance: both axes at a tile center.
-  if (posX % MILLITILE !== 0 || posY % MILLITILE !== 0) return false;
   const dx = dirDX(dir);
   const dy = dirDY(dir);
   if (dx === 0 && dy === 0) return false;
-  const cx = tileOf(posX);
+  // Flush against the brick on the movement axis (collision clamps to a centre).
+  if (dx !== 0 && posX % MILLITILE !== 0) return false;
+  if (dy !== 0 && posY % MILLITILE !== 0) return false;
+  const cx = tileOf(posX); // nearest tile = the lane the body sits squarely in
   const cy = tileOf(posY);
   const ax = cx + dx; // tile directly ahead (the brick)
   const ay = cy + dy;

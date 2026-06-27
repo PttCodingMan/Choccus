@@ -67,18 +67,18 @@ const CLASSIC_TEMPLATE: readonly string[] = [
  */
 const VILLAGE_TEMPLATE: readonly string[] = [
   '@.SSS...P.#S#@#',
-  '.#PSP#P..#SS...',
+  '.#P#P#P..#SS...',
   '..SSSS.PP.#P#P#',
   'P#P#P#P..#SSSSS',
   'SSSSSS..P.#P#P#',
   'S#S#S#PP..SSSSS',
   '#.#.#...P.#.#.#',
   'SSSSS.P..#S#S#S',
-  '#P#PS#.PPSSSSSS',
-  '#SSSSSP..#P#P#S',
-  '#S#PS#P.PSSSSS.',
-  '#@SSSS.P.#P#P#.',
-  '######..P.SSS.@',
+  '#P#P#..PPSSSSSS',
+  'SSSSS#P..#P#P#S',
+  '#S#P#.P.PSSSSS.',
+  '.@SSS#.P.#P#P#.',
+  '#.#S#...P.SSS.@',
 ];
 
 /**
@@ -113,8 +113,35 @@ const MAP_TEMPLATES: Record<string, readonly string[]> = {
   village: VILLAGE_TEMPLATE,
 };
 
-/** All authored map kinds, in registry order — drives the UI map pickers. */
+/** All authored map kinds, in registry order — drives the UI map pickers.
+ *  Snapshotted at module load so a runtime `registerCustomTemplate` (local map
+ *  editor only) never leaks a custom kind into the shipped map pickers. */
 export const MAP_KINDS: readonly string[] = Object.keys(MAP_TEMPLATES);
+
+/**
+ * Return the authored template lines for a kind, or `undefined` if unregistered.
+ * Lets the map editor seed its canvas from a shipped template without exposing
+ * the private `*_TEMPLATE` consts (read-only — never mutate the returned array).
+ */
+export function templateForKind(kind: MapKind): readonly string[] | undefined {
+  return MAP_TEMPLATES[kind];
+}
+
+/**
+ * Register (or replace) a custom map template at runtime, after validating it
+ * with the same rules as the shipped maps (13 rows × 15 chars, exactly 4 `@`).
+ * Since `generateMap`/`mapSpawns` read `MAP_TEMPLATES` dynamically, registering
+ * makes `kind` immediately playable.
+ *
+ * LOCAL SOLO PLAY ONLY (the map editor's "play test"): deliberately does NOT add
+ * the kind to the exported `MAP_KINDS`, so the shipped map pickers stay unchanged
+ * and no golden/AI re-pin is implied. Stays pure / deterministic-safe — drawing
+ * the map still consumes zero PRNG. Throws on an invalid template.
+ */
+export function registerCustomTemplate(kind: string, lines: readonly string[]): void {
+  validateTemplate(`custom template '${kind}'`, lines);
+  MAP_TEMPLATES[kind] = lines;
+}
 
 /** Flat index for tile (x, y). Caller guarantees bounds. */
 export function idx(x: number, y: number): number {
@@ -247,7 +274,12 @@ export function generateMap(
   for (let y = 0; y < MAP_ROWS; y++) {
     for (let x = 0; x < MAP_COLS; x++) {
       const i = idx(x, y);
-      grid[i] = clear.has(i) ? TileKind.EMPTY : templateTile(tmpl[y]![x]!);
+      const t = templateTile(tmpl[y]![x]!);
+      // Spawn-clear only dissolves SOFT filler — the "don't spawn me boxed in a
+      // destructible cage" guarantee. HARD/PUSH on a spawn-clear cell are
+      // deliberate authored structure (e.g. pirate's bottom hard bricks); keep
+      // them exactly as drawn. The spawn tile itself is '@'→EMPTY regardless.
+      grid[i] = clear.has(i) && t === TileKind.SOFT ? TileKind.EMPTY : t;
     }
   }
   return [grid, prng];

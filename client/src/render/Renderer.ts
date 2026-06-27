@@ -107,7 +107,7 @@ export class Renderer {
   >();
   private readonly explPool = new Map<
     number,
-    { node: HTMLDivElement; mask: number; op: string; shown: boolean }
+    { node: HTMLDivElement; mask: number; op: string; shown: boolean; origin: boolean }
   >();
   private readonly playerPool = new Map<number, { node: HTMLDivElement; sig: string; z: string }>();
   private readonly shellPool = new Map<
@@ -280,7 +280,16 @@ export class Renderer {
         for (let x = 0; x < MAP_COLS; x++) {
           const node = div(
             `position:absolute;left:${cellLeft(x)}px;top:${cellTop(y)}px;` +
-              `width:${TW}px;height:${TH}px;z-index:${rowZ(y, Z.TILE)};`,
+              `width:${TW}px;height:${TH}px;z-index:${rowZ(y, Z.TILE)};` +
+              // translateZ(0) caches each static tile as its own GPU texture, so a
+              // moving entity's dirty-rect composites OVER it instead of re-rastering
+              // the tile's inset box-shadows every frame. Single stacking context +
+              // 196 shadowed tiles was the 182ms presentation cost (measured 49fps/13
+              // jank → 60fps/0 under heavy explosions). Built once at board init, so
+              // no mid-game layer-promotion burst; per-row z-index 2.5D order kept.
+              // ponytail: ~1.5MB GPU (196 tiny static textures); if memory ever bites,
+              // promote only the shadowed brick/wall cells, not the flat floor.
+              `transform:translateZ(0);`,
           );
           node.innerHTML = tileInner(map[idx(x, y)] ?? TileKind.EMPTY, x, y);
           this.tileLayer.appendChild(node);
@@ -455,6 +464,11 @@ export class Renderer {
         best = Math.min(best, Math.abs(x - ox) + Math.abs(y - oy));
       return best === Infinity ? 0 : best;
     };
+    // A cell is a detonation origin this frame iff a bomb vanished on it — i.e.
+    // its tile-distance to the nearest origin is 0. Reuses `origins` directly
+    // (no parallel Set): one structure, queried per burning cell below.
+    const isOriginCell = (x: number, y: number): boolean =>
+      origins.some(([ox, oy]) => ox === x && oy === y);
     // idx() wraps out-of-bounds neighbours (idx(-1,y) === idx(COLS-1,y-1)), so
     // bounds-guard each lookup — the `"x,y"` string keys gave this for free.
     const burning = (x: number, y: number): boolean =>
@@ -482,11 +496,21 @@ export class Renderer {
             `width:${TW}px;height:${TH}px;z-index:${rowZ(c.tileY, Z.EXPL)};`,
         );
         this.explLayer.appendChild(node);
-        v = { node, mask: -1, op: '', shown: false };
+        v = { node, mask: -1, op: '', shown: false, origin: false };
         this.explPool.set(key, v);
       }
-      if (v.mask !== mask) {
-        v.node.innerHTML = explosionHtml(mask);
+      // Only a real detonation tile draws the "cake bursting apart" graphic; arm
+      // cells (incl. where two arms cross) must not, or a row of bombs paints a
+      // phantom cake-burst at every crossing. `origins` is populated only on the
+      // detonation frame. Re-evaluate every frame (not just first light): a cell
+      // already lit as a plain arm of bomb A can become an origin when bomb B
+      // detonates on it before A's flame clears — that genuine new detonation
+      // must light its cake-burst, not stay latched as an arm. Once true, keep it
+      // (an origin doesn't revert to an arm while it stays lit).
+      const wasOrigin = v.origin;
+      if (!v.origin) v.origin = isOriginCell(c.tileX, c.tileY);
+      if (v.mask !== mask || v.origin !== wasOrigin) {
+        v.node.innerHTML = explosionHtml(mask, v.origin);
         v.mask = mask;
       }
       // Newly appearing (incl. reused pool node) → burst-pop, delayed by ring so
@@ -515,6 +539,8 @@ export class Renderer {
       if (!seen.has(key)) {
         v.node.style.display = 'none';
         v.shown = false; // re-arm the pop if this tile burns again
+        v.origin = false; // clear latch so a fresh burn re-evaluates origin
+        v.mask = -1; // force HTML rebuild so origin is re-evaluated on re-burn
       }
     }
   }

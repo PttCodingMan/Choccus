@@ -35,7 +35,7 @@ export function makeFeelParams(partial?: Partial<FeelParams>): FeelParams {
     cornerAssist: clamp(
       partial?.cornerAssist ?? DEFAULT_CORNER_ASSIST,
       0,
-      0.5,
+      0.8,
     ),
     inputBufferMs: clamp(partial?.inputBufferMs ?? DEFAULT_INPUT_BUFFER_MS, 0, 250),
   });

@@ -384,14 +384,13 @@ export function itemHtml(kind: number): string {
  * fills are linear/radial/solid (no box-shadow blur on arm cells → cheap on a
  * chain); colours never change with shape.
  */
-export function explosionHtml(mask: number): string {
+export function explosionHtml(mask: number, isOrigin = false): string {
   const L = mask & 1,
     R = mask & 2,
     U = mask & 4,
     D = mask & 8;
   const horiz = L || R;
   const vert = U || D;
-  const center = horiz && vert;
   // Shade ACROSS the flow (perpendicular), not per-cell radial → one continuous
   // top-lit ribbon with no repeating per-cell highlight blob.
   const creamH = `linear-gradient(180deg,${MILK.explHi},${MILK.explMid} 45%,${MILK.explLo})`;
@@ -434,7 +433,12 @@ export function explosionHtml(mask: number): string {
   // Arm tip (one neighbour) or lone cell: the LAST cell = a SQUARED cream crest
   // (方的海浪, not pointed) bulging just past the stream cap — a rounded square the
   // full width of the (now fatter) stream, the cream overflowing the path's end.
-  if (mask === 0 || mask === 1 || mask === 2 || mask === 4 || mask === 8) {
+  // A SINGLE-arm origin (mask 1/2/4/8, e.g. a bomb tucked against a wall) still
+  // needs this outer cap on its one arm, else it renders as a blunt stub — so the
+  // crest also draws for single-direction origins. Only the lone-cell case (mask 0)
+  // is suppressed for origins, where the core+chunk burst already fills the centre.
+  const singleArm = mask === 1 || mask === 2 || mask === 4 || mask === 8;
+  if (singleArm || (!isOrigin && mask === 0)) {
     const ox = L ? 1 : R ? -1 : 0; // outward = away from the neighbour
     const oy = U ? 1 : D ? -1 : 0; // (lone cell stays centred → square blob)
     const ex = CX + ox * 15; // crest centre, nudged outward past the cap
@@ -466,7 +470,7 @@ export function explosionHtml(mask: number): string {
         `border-radius:50%;background:rgba(255,255,255,.${o});"></div>`;
   }
 
-  if (center) {
+  if (isOrigin) {
     // Blast origin = the chocolate cake bursting apart: a molten-ganache core +
     // dark-sponge cake chunks (cream-capped) flung onto the DIAGONALS so they fill
     // the gaps between the orthogonal arms and never sit on the amber kill-zone.
