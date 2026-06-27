@@ -387,6 +387,8 @@ function canPush(
   posX: number,
   posY: number,
   dir: number,
+  players: readonly PlayerState[],
+  self: PlayerState,
 ): boolean {
   const dx = dirDX(dir);
   const dy = dirDY(dir);
@@ -402,7 +404,13 @@ function canPush(
   const by = ay + dy;
   if (!inBounds(ax, ay)) return false;
   if (grid[idx(ax, ay)] !== TileKind.PUSH) return false;
-  return isOpen(grid, bombs, bx, by);
+  if (!isOpen(grid, bombs, bx, by)) return false;
+  // Don't shove the crate onto a tile another player's body occupies — players
+  // aren't in `grid`, so isOpen() misses them and the crate would slide through.
+  for (const p of players) {
+    if (p !== self && p.alive && bodyOverlapsTile(p.posX, p.posY, bx, by)) return false;
+  }
+  return true;
 }
 
 /** Slide the PUSH brick ahead in `dir` one tile over. Caller must have confirmed
@@ -441,6 +449,7 @@ export function stepPlayerMovement(
   player: PlayerState,
   input: InputFrame,
   params: SimParams,
+  players: readonly PlayerState[] = [],
 ): void {
   const pressed = newlyPressedDir(player.prevDir, input.dir);
   player.heldStack = updateHeldStack(player.heldStack, player.prevDir, input.dir);
@@ -482,7 +491,7 @@ export function stepPlayerMovement(
       // the player charges PUSH_CHARGE_TICKS consecutive ticks in this direction;
       // turning or releasing resets the charge. The player holds position but
       // faces the push; clear the buffer just like a move so it doesn't replay.
-      if (canPush(grid, bombs, player.posX, player.posY, d)) {
+      if (canPush(grid, bombs, player.posX, player.posY, d, players, player)) {
         player.facing = d as Direction;
         charging = true;
         player.pushChargeTicks =

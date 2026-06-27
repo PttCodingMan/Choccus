@@ -175,7 +175,7 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
   for (let i = 0; i < players.length; i++) {
     const pl = players[i];
     if (pl === undefined) continue;
-    stepPlayerMovement(grid, bombs, pl, inputs[i] ?? NO_INPUT, state.params);
+    stepPlayerMovement(grid, bombs, pl, inputs[i] ?? NO_INPUT, state.params, players);
   }
   // A push can shove a crate onto a floor item (items only ever sit on EMPTY
   // tiles, so item-tile==PUSH ⟺ a crate was just pushed onto it this tick).
