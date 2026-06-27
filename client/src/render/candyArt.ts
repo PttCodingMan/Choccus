@@ -1,6 +1,6 @@
 /**
  * Candy art — the "milk-cream" (牛奶奶油) visual language, ported tile-for-tile
- * from the `IsoArena` design comp (Choccus UI與地圖重設計/IsoArena.dc.html).
+ * from the `IsoArena` design comp (Chocco UI與地圖重設計/IsoArena.dc.html).
  *
  * Pure presentation: each builder returns a CSS string or an HTML string for a
  * stack of absolutely-positioned <div>s inside a TW×TH cell. The Renderer drops

@@ -64,7 +64,7 @@ Nash 不動點成立；你的 v5-vs-v4 pirate ~50% 其實是**因為 pirate 的 
 - **無任何 AlphaZero/MuZero/neural-MCTS 打敗過 Pommerman 搜尋冠軍**。唯一 AlphaZero 式系統（M2CTS, 2025）
   只把 Pommerman 當小規模泛化 demo，無強度宣稱。*來源*：`arxiv 2401.16852`。**高信心**（缺席證據）。
 
-> **對 Choccus 的意義**：你的「悲觀 maximin + 硬安全閘門 + 整數決定性」就是奪冠配方，且**搜得比冠軍深**。
+> **對 Chocco 的意義**：你的「悲觀 maximin + 硬安全閘門 + 整數決定性」就是奪冠配方，且**搜得比冠軍深**。
 > 結論：**搜尋軸的剩餘空間很小**，突破靠別的軸。
 
 ### 2.2 對手建模 / best-response / 非遞移池（最有料的一線）
@@ -88,7 +88,7 @@ Nash 不動點成立；你的 v5-vs-v4 pirate ~50% 其實是**因為 pirate 的 
   *來源*：Omidshafiei et al., "α-Rank", Nature 2019 (`arxiv 1903.01373`)；Balduzzi et al., "Re-evaluating
   Evaluation", NeurIPS 2018（Nash-averaging）。**高信心（α-Rank）／中信心（Nash-averaging 那篇本次未直接命中）**。
 
-> **對 Choccus 的意義**：①線上適應要做就做**單調切換**（有保證、用現成零件）；②**修評估**：你 docs §七
+> **對 Chocco 的意義**：①線上適應要做就做**單調切換**（有保證、用現成零件）；②**修評估**：你 docs §七
 > 已知「BT 壓縮 RPS 環、靠印殘差補」——α-Rank/Nash-averaging 是這個 hack 的正規版，且 Nash-averaging 的
 > **clone 不變性**直接回答你「v6 池放 v4+v5 近複製品會不會扭曲」。
 
@@ -115,7 +115,7 @@ Nash 不動點成立；你的 v5-vs-v4 pirate ~50% 其實是**因為 pirate 的 
 - ⚠️ PNS 在**近均勻分支、無終局子目標**時退化成低效 BFS → **別當頂層控制器**，當**有界戰術子目標證明器**：
   每決策 tick 對「最近敵人 K 步內有無強迫擊殺」跑小額度 df-pn，證出就收割、否則回退悲觀 maximin。
 
-> **對 Choccus 的意義**：你 `tryForcedTrap`（minimax forced-trap）/`tryFinishingMove` **已是手刻的證明式搜尋**；
+> **對 Chocco 的意義**：你 `tryForcedTrap`（minimax forced-trap）/`tryFinishingMove` **已是手刻的證明式搜尋**；
 > 文獻等於認證這個方向，並給出**把它換成有界 df-pn/MCTS-Solver** 的正規升級路徑，專打你點名過的「擊殺轉化」瓶頸。
 
 ### 2.5 追逃理論：解釋接觸稀缺、修正「對稱＝必改 sim」
@@ -150,7 +150,7 @@ Nash 不動點成立；你的 v5-vs-v4 pirate ~50% 其實是**因為 pirate 的 
 
 ---
 
-## 3. 對 Choccus 的具體下一步（v6 建議）
+## 3. 對 Chocco 的具體下一步（v6 建議）
 
 **先做（低風險、高槓桿）**
 - **B｜評估升級**：把 `bt-rank` 的單一 Elo 補上 **α-Rank 排序**或 **Nash-averaging**（cycle-aware + clone 不變）。

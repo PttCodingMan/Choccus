@@ -1,5 +1,5 @@
 /**
- * Choccus — WebSocket lockstep protocol (type definitions only).
+ * Chocco — WebSocket lockstep protocol (type definitions only).
  *
  * Wire format: MessagePack payload prefixed by a 1-byte message-type id
  * (the `MsgType` values below). The Python relay mirrors these ids by hand;

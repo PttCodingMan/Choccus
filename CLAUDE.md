@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# 奶油啵啵爆（Choccus）
+# 奶油啵啵爆（Chocco）
 
 巧克力與蛋糕奶油主題的格子即時對戰遊戲。放置蛋糕 → 十字範圍爆炸 → 黏住困住 / 救援。
 
