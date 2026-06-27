@@ -63,7 +63,7 @@ Monorepo：npm workspaces = `client` + `tools/sim-runner`；Python relay 在 `se
 
 ## 程式架構（Code Architecture）
 
-Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（headless 決定性測試 + AI bench，跑在 Node/tsx/vitest）、`server/`（Python WebSocket relay）、`shared/`（前後端共用 `constants.ts` / `types.ts` / `protocol.ts`）、`dypm.md`（AI 評分迴圈設計參考）。
+Monorepo：`client/`（TS + Vite + Pixi.js v8 前端）、`tools/sim-runner/`（headless 決定性測試 + AI bench，跑在 Node/tsx/vitest）、`server/`（Python WebSocket relay）、`shared/`（前後端共用 `constants.ts` / `types.ts` / `protocol.ts`）、`dypm.md`（AI 評分迴圈設計參考）。前端卡頓/效能診斷流程見 `docs/perf-lag-hunting.md`。
 
 **三層大圖：**
 
