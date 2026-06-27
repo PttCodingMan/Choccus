@@ -54,7 +54,7 @@ export function rateMatch(
 }
 
 /**
- * Choccus-facing helper: fold a finished match into new ratings, keyed by
+ * Chocco-facing helper: fold a finished match into new ratings, keyed by
  * player id. `winnerTeam === null` (time-cap draw / mutual KO) ranks every team
  * equal. Players are grouped by team in ascending team order; the winning team
  * ranks 1st and every other team ties for 2nd (the sim only reports the last

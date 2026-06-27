@@ -1,5 +1,5 @@
 /**
- * Choccus — single source of truth for all fixed constants.
+ * Chocco — single source of truth for all fixed constants.
  *
  * Every value here traces back to CLAUDE.md (design spec). The Python server
  * keeps a hand-aligned copy of whatever it needs; this file is authoritative.

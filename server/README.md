@@ -1,4 +1,4 @@
-# Choccus relay server
+# Chocco relay server
 
 Pure relay for deterministic lockstep — the simulation runs client-side. The
 server coordinates rooms, generates the shared match seed, and relays per-tick

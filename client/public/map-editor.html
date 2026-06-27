@@ -1,13 +1,13 @@
 <!doctype html>
 <!--
-  Choccus map editor — paints the authored ASCII templates in src/sim/Map.ts and
+  Chocco map editor — paints the authored ASCII templates in src/sim/Map.ts and
   writes them back in place via the dev-only /__map endpoint (see vite.config.ts
   mapEditorPlugin). No File System Access prompt, no copy-paste. Works only while
   `npm run dev` is running: open http://localhost:5173/map-editor.html. Zero deps.
   ponytail: dev-server-backed; inert in a production build (endpoint absent).
 -->
 <meta charset="utf-8" />
-<title>Choccus map editor</title>
+<title>Chocco map editor</title>
 <style>
   :root { --cell: 34px; }
   body { font: 14px/1.4 system-ui, sans-serif; background: #faf3e0; color: #3a2a1a; margin: 24px; }
@@ -37,7 +37,7 @@
   code { background: #fff8ec; padding: 1px 4px; border-radius: 3px; }
 </style>
 
-<h1>🍫 Choccus map editor</h1>
+<h1>🍫 Chocco map editor</h1>
 <div id="bar">
   <select id="pick" disabled></select>
   <div id="palette"></div>

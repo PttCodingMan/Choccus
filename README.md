@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./assets/banner.png" alt="奶油啵啵爆 Choccus" width="820">
+  <img src="./assets/banner.png" alt="奶油啵啵爆 Chocco" width="820">
 </p>
 
-# 奶油啵啵爆（Choccus）
+# 奶油啵啵爆（Chocco）
 
 > 🌐 **語言 / Language**：**中文（本頁）** ｜ [English](./README.en.md)
 
