@@ -122,6 +122,25 @@ describe('push mechanic', () => {
     expect(player.posX).toBe(px * MILLITILE); // player blocked, stays put
   });
 
+  it('refuses the push when a player occupies the tile beyond the brick (no clip-through)', () => {
+    const grid = emptyGrid();
+    const px = 3;
+    const py = 3;
+    grid[idx(px + 1, py)] = TileKind.PUSH; // crate ahead
+    // (px+2, py) is EMPTY in the grid, but a player stands on it.
+    const pusher = createPlayer(0, px, py);
+    const blocker = createPlayer(1, px + 2, py); // body sits on the destination tile
+    const input: InputFrame = { dir: Direction.RIGHT, action: 0 };
+
+    // Charge well past PUSH_CHARGE_TICKS: the crate must never slide onto the body.
+    for (let t = 0; t < PUSH_CHARGE_TICKS + 5; t++) {
+      stepPlayerMovement(grid, [], pusher, input, PARAMS, [pusher, blocker]);
+      expect(grid[idx(px + 1, py)]).toBe(TileKind.PUSH); // crate stays put
+      expect(grid[idx(px + 2, py)]).toBe(TileKind.EMPTY); // never overwritten onto the player
+    }
+    expect(pusher.posX).toBe(px * MILLITILE); // pusher blocked, stays put
+  });
+
   it('shoving a crate onto a floor item deletes the item (the crate takes its place)', () => {
     const base = createInitialState(0, makeFeelParams(), 2, { pvp: true, teams: [0, 1] });
     const map = new Uint8Array(base.map);

@@ -52,7 +52,7 @@ const SLIDERS: Record<keyof FeelParams, SliderSpec> = {
   cornerAssist: {
     label: 'Corner assist',
     min: 0,
-    max: 0.5,
+    max: 0.8,
     step: 0.05,
     default: DEFAULT_CORNER_ASSIST,
     format: (v) => `${v.toFixed(2)} tiles`,
@@ -97,7 +97,10 @@ export class FeelPanel {
   constructor() {
     this.root = el(
       'div',
-      ['position:fixed', 'top:10px', 'right:10px', 'z-index:30',
+      // Sits just BELOW the 🔇 Muted button (main.ts: top:8px right:8px z-index:900)
+      // so the two top-right controls don't overlap; matching z-index keeps the
+      // gear clickable (was z-index:30, hidden under Muted's z-index:900).
+      ['position:fixed', 'top:48px', 'right:8px', 'z-index:900',
         'font:13px/1.5 system-ui,sans-serif', `color:${PALETTE.text}`,
         'text-align:right'].join(';'),
     );

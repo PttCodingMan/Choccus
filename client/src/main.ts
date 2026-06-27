@@ -38,8 +38,10 @@ import { LoopbackTransport } from './net/LoopbackTransport';
 import { MatchRunner, type MatchBot, type MatchSpec } from './net/MatchRunner';
 import { runNetMode } from './net/netMode';
 import { MsgType, type MatchStartMsg } from './net/protocolCodec';
+import { runEditor } from './editor/editorMode';
+import { getSavedMap, listSavedMaps } from './editor/savedMaps';
 import { Renderer } from './render/Renderer';
-import { MAP_KINDS, type MapKind } from './sim/Map';
+import { MAP_KINDS, type MapKind, registerCustomTemplate } from './sim/Map';
 import { runSpectate } from './spectate/spectateMode';
 import { FeelPanel } from './ui/FeelPanel';
 import { runGuide } from './ui/guidePage';
@@ -199,12 +201,60 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     return `Solo +${bots} AI (${buildStrengthLabel()})${teamNote} — Arrows move · Space drops chocolate`;
   };
 
-  // Map kind: ?map=<any registered kind> (case-insensitive); else → classic.
+  // Custom map play-test (from the ?mode=editor "Play test" button): ?map=__custom
+  // reads the editor's serialized grid from sessionStorage and registers it as a
+  // runtime-only template (LOCAL solo only — never enters MAP_KINDS, golden, AI).
+  // If the storage is missing/invalid we fall back to classic gracefully.
+  const CUSTOM_KIND = '__custom';
+  const loadCustomMap = (): boolean => {
+    if (params.get('map') !== CUSTOM_KIND) return false;
+    try {
+      const raw = sessionStorage.getItem('choccus.customMap');
+      if (raw === null) return false;
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length !== 13) return false;
+      const lines = parsed.map((r) => String(r));
+      registerCustomTemplate(CUSTOM_KIND, lines); // validates (throws if bad)
+      return true;
+    } catch {
+      return false; // malformed grid or failed validation → fall back to classic
+    }
+  };
+  const usingCustomMap = loadCustomMap();
+
+  // localStorage-backed "saved maps" (the map editor's 💾 Save). SOLO ONLY: a
+  // remote client has no copy of the template, so a saved map must never reach
+  // the net lobby/online room (it would desync). Each is registered on demand as
+  // a runtime-only template under the kind 'saved:<name>' — never enters
+  // MAP_KINDS, golden, or AI. Returns the kind on success, or null (missing /
+  // corrupt / failed validation) so the caller can fall back to classic.
+  const SAVED_PREFIX = 'saved:';
+  const registerSavedMap = (name: string): MapKind | null => {
+    try {
+      const lines = getSavedMap(name);
+      if (lines === null) return null;
+      const kind = SAVED_PREFIX + name;
+      registerCustomTemplate(kind, lines); // validates (throws if bad)
+      return kind;
+    } catch {
+      return null; // missing/corrupt/invalid → caller falls back to classic
+    }
+  };
+
+  // Map kind: ?map=<any registered kind> (case-insensitive); the runtime
+  // '__custom' (editor play-test) and 'saved:<name>' (localStorage) kinds are
+  // accepted for this LOCAL match only; everything else → classic. A 'saved:'
+  // key is (re)registered here so picking one always loads the latest bytes.
   const parseMapKind = (raw: string | null): MapKind => {
-    const k = (raw ?? '').toLowerCase();
+    const v = raw ?? '';
+    if (v === CUSTOM_KIND && usingCustomMap) return CUSTOM_KIND;
+    if (v.startsWith(SAVED_PREFIX)) {
+      return registerSavedMap(v.slice(SAVED_PREFIX.length)) ?? 'classic';
+    }
+    const k = v.toLowerCase();
     return MAP_KINDS.includes(k) ? k : 'classic';
   };
-  let mapKind: MapKind = parseMapKind(params.get('map'));
+  let mapKind: MapKind = usingCustomMap ? CUSTOM_KIND : parseMapKind(params.get('map'));
 
   let feel: FeelParams = makeFeelParams();
 
@@ -311,18 +361,37 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     'position:fixed;top:8px;left:8px;z-index:900;padding:6px 12px;' +
     'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
     "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
-  const mapOptions: ReadonlyArray<readonly [MapKind, string]> = MAP_KINDS.map(
-    (k) => [k, k.charAt(0).toUpperCase() + k.slice(1)] as const,
-  );
-  for (const [value, label] of mapOptions) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    if (value === mapKind) opt.selected = true;
-    mapPicker.appendChild(opt);
-  }
+  // Rebuild the picker: shipped MAP_KINDS first, then a "My maps" optgroup of the
+  // localStorage saved maps (solo-only). Rebuilt whenever solo is (re)entered, so
+  // a map just saved in the editor shows up here. The current selection is
+  // preserved when still present; a deleted saved map falls back to classic.
+  const buildMapOptions = (): void => {
+    mapPicker.replaceChildren();
+    for (const k of MAP_KINDS) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k.charAt(0).toUpperCase() + k.slice(1);
+      if (k === mapKind) opt.selected = true;
+      mapPicker.appendChild(opt);
+    }
+    const saved = listSavedMaps();
+    if (saved.length > 0) {
+      const group = document.createElement('optgroup');
+      group.label = 'My maps';
+      for (const name of saved) {
+        const opt = document.createElement('option');
+        opt.value = SAVED_PREFIX + name;
+        opt.textContent = '★ ' + name;
+        if (opt.value === mapKind) opt.selected = true;
+        group.appendChild(opt);
+      }
+      mapPicker.appendChild(group);
+    }
+  };
+  buildMapOptions();
   mapPicker.addEventListener('change', () => {
     mapKind = parseMapKind(mapPicker.value);
+    buildMapOptions(); // reflect classic fallback if a saved map vanished
     reset();
   });
   document.body.appendChild(mapPicker);
@@ -422,6 +491,20 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
     strengthPicker.style.opacity = '0.4';
   }
 
+  // "← Edit map" link — only shown when play-testing a custom map. Returns to the
+  // editor (?mode=editor), which restores the in-progress grid from sessionStorage
+  // so the paint → play-test → edit loop is one click.
+  if (usingCustomMap) {
+    const editLink = document.createElement('button');
+    editLink.textContent = '← Edit map';
+    editLink.style.cssText =
+      'position:fixed;bottom:12px;left:12px;z-index:900;padding:7px 14px;' +
+      'background:#fff;color:#7A4A2B;border:none;border-radius:999px;' +
+      "box-shadow:0 4px 0 #EAD6B8;font:700 13px 'Nunito',system-ui,sans-serif;cursor:pointer;";
+    editLink.addEventListener('click', () => window.location.assign('?mode=editor'));
+    document.body.appendChild(editLink);
+  }
+
   // "Click anywhere to enable sound" hint.
   const soundHint = document.createElement('div');
   soundHint.style.cssText =
@@ -455,6 +538,8 @@ const params = new URLSearchParams(window.location.search);
 const mode = params.get('mode') ?? import.meta.env.VITE_DEFAULT_MODE ?? null;
 if (mode === 'spectate') {
   void runSpectate(params);
+} else if (mode === 'editor') {
+  runEditor(params);
 } else if (mode === 'solo') {
   void bootstrapSolo(params);
 } else if (mode === 'guide') {
