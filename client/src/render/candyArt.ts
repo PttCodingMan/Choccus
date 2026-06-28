@@ -384,7 +384,7 @@ export function itemHtml(kind: number): string {
  * fills are linear/radial/solid (no box-shadow blur on arm cells → cheap on a
  * chain); colours never change with shape.
  */
-export function explosionHtml(mask: number, isOrigin = false): string {
+export function explosionHtml(mask: number, isOrigin = false, tipBlocked = false): string {
   const L = mask & 1,
     R = mask & 2,
     U = mask & 4,
@@ -437,8 +437,13 @@ export function explosionHtml(mask: number, isOrigin = false): string {
   // needs this outer cap on its one arm, else it renders as a blunt stub — so the
   // crest also draws for single-direction origins. Only the lone-cell case (mask 0)
   // is suppressed for origins, where the core+chunk burst already fills the centre.
+  // `tipBlocked` (the arm END ran into a wall / map edge, NOT a clean full-range
+  // end) suppresses the whole wave head — crest + 浪花 spray — so the flow reads as
+  // ABSORBED by the obstacle (it ends at the stream's rounded cap) rather than
+  // splashing into/through it. The crest/foam only render when the fire reached its
+  // last tile in the open (the "海浪 crashing into open space" read).
   const singleArm = mask === 1 || mask === 2 || mask === 4 || mask === 8;
-  if (singleArm || (!isOrigin && mask === 0)) {
+  if ((singleArm || (!isOrigin && mask === 0)) && !tipBlocked) {
     const ox = L ? 1 : R ? -1 : 0; // outward = away from the neighbour
     const oy = U ? 1 : D ? -1 : 0; // (lone cell stays centred → square blob)
     const ex = CX + ox * 15; // crest centre, nudged outward past the cap
