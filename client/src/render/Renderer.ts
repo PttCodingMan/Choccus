@@ -107,7 +107,14 @@ export class Renderer {
   >();
   private readonly explPool = new Map<
     number,
-    { node: HTMLDivElement; mask: number; op: string; shown: boolean; origin: boolean }
+    {
+      node: HTMLDivElement;
+      mask: number;
+      op: string;
+      shown: boolean;
+      origin: boolean;
+      blocked: boolean;
+    }
   >();
   private readonly playerPool = new Map<number, { node: HTMLDivElement; sig: string; z: string }>();
   private readonly shellPool = new Map<
@@ -480,6 +487,14 @@ export class Renderer {
       (burning(x + 1, y) ? 2 : 0) |
       (burning(x, y - 1) ? 4 : 0) |
       (burning(x, y + 1) ? 8 : 0);
+    // Arm-END cells that stopped at an obstacle (wall / edge / brick) rather than
+    // running their full fire reach — flagged by the sim (ExplosionState.blocked).
+    // Such tips drop the wave crest + 浪花 (see explosionHtml) so the flow reads as
+    // absorbed, not splashing into the obstacle. Keyed by tile so a duplicate cell
+    // entry for the same tile (overlapping arms) collapses to one.
+    const blockedCells = new Set<number>();
+    for (const c of next.explosions)
+      if (c.blocked) blockedCells.add(idx(c.tileX, c.tileY));
 
     const seen = new Set<number>();
     for (const c of next.explosions) {
@@ -496,7 +511,7 @@ export class Renderer {
             `width:${TW}px;height:${TH}px;z-index:${rowZ(c.tileY, Z.EXPL)};`,
         );
         this.explLayer.appendChild(node);
-        v = { node, mask: -1, op: '', shown: false, origin: false };
+        v = { node, mask: -1, op: '', shown: false, origin: false, blocked: false };
         this.explPool.set(key, v);
       }
       // Only a real detonation tile draws the "cake bursting apart" graphic; arm
@@ -509,9 +524,11 @@ export class Renderer {
       // (an origin doesn't revert to an arm while it stays lit).
       const wasOrigin = v.origin;
       if (!v.origin) v.origin = isOriginCell(c.tileX, c.tileY);
-      if (v.mask !== mask || v.origin !== wasOrigin) {
-        v.node.innerHTML = explosionHtml(mask, v.origin);
+      const blocked = blockedCells.has(key);
+      if (v.mask !== mask || v.origin !== wasOrigin || v.blocked !== blocked) {
+        v.node.innerHTML = explosionHtml(mask, v.origin, blocked);
         v.mask = mask;
+        v.blocked = blocked;
       }
       // Newly appearing (incl. reused pool node) → burst-pop, delayed by ring so
       // the cross erupts outward from its origin. WAAPI restarts cleanly on reuse.

@@ -43,6 +43,15 @@ export interface ExplosionState {
   tileY: number;
   /** Remaining ticks; spawned at SPARK_TICKS, removed at 0. */
   ttlTicks: number;
+  /**
+   * RENDER-ONLY hint: this cell is an arm END that STOPPED at an obstacle (HARD
+   * wall, map edge, or a soft/push brick) instead of reaching its full fire reach
+   * in the open. The renderer drops the wave crest + 浪花 spray on such ends so the
+   * flow reads as absorbed, not splashing into the obstacle. Deterministic (a pure
+   * function of the already-hashed map + bomb), so it is DELIBERATELY EXCLUDED from
+   * `hashSimState` — folding it would be redundant and would force a golden re-pin.
+   */
+  blocked?: boolean;
 }
 
 /** Arm directions in fixed processing order: UP, DOWN, LEFT, RIGHT. */
@@ -106,13 +115,20 @@ export function processDetonations(
     cells.push({ tileX: bomb.tileX, tileY: bomb.tileY, ttlTicks: SPARK_TICKS });
 
     for (const [dx, dy] of ARM_DELTAS) {
+      // Index in `cells` of THIS arm's last flame cell. If the arm stops at an
+      // obstacle (wall / edge / brick) rather than running its full fire reach,
+      // that tip is flagged `blocked` so the renderer drops its 浪花 (render-only).
+      let armTipIdx = -1;
       for (let step = 1; step <= bomb.fire; step++) {
         const tx = bomb.tileX + dx * step;
         const ty = bomb.tileY + dy * step;
         const cell = idx(tx, ty);
         // Read the tick-start layout: a brick a sibling bomb already cleared this
         // tick still blocks here (and HARD never changes mid-tick anyway).
-        if (!inBounds(tx, ty) || startGrid[cell] === TileKind.HARD) break;
+        if (!inBounds(tx, ty) || startGrid[cell] === TileKind.HARD) {
+          if (armTipIdx >= 0) cells[armTipIdx]!.blocked = true; // ran into a wall / map edge
+          break;
+        }
         if (isDestructibleBrick(startGrid[cell]!)) {
           // SOFT or pushable PUSH brick: clear it + roll its drop ONCE per tick —
           // the first arm to reach it. A later arm meeting the same tick-start
@@ -131,6 +147,7 @@ export function processDetonations(
               items.push({ tileX: tx, tileY: ty, kind: kind as ItemKind });
             }
           }
+          if (armTipIdx >= 0) cells[armTipIdx]!.blocked = true; // ran into a brick
           break;
         }
         // EMPTY tile: chain any undetonated bomb sitting here (same tick), then
@@ -151,6 +168,7 @@ export function processDetonations(
           }
         }
         cells.push({ tileX: tx, tileY: ty, ttlTicks: SPARK_TICKS });
+        armTipIdx = cells.length - 1;
       }
     }
   }
