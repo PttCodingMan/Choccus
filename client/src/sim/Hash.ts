@@ -86,7 +86,8 @@ export function hashSimState(s: SimState): number {
     h = foldInt(h, b.fuseTicks);
     h = foldInt(h, b.fire);
   }
-  // 6. explosions
+  // 6. explosions (NOT c.blocked — a render-only hint derived from already-hashed
+  // state; folding it would be redundant and force a needless golden re-pin).
   h = foldInt(h, s.explosions.length);
   for (const c of s.explosions) {
     h = foldInt(h, c.tileX);
