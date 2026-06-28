@@ -24,6 +24,26 @@ import {
 const fp = makeFeelParams();
 const IDLE: InputFrame = NO_INPUT;
 
+describe('single-team match (solo practice vs 0 bots)', () => {
+  it('does NOT end the instant it starts — stays PLAYING with one team', () => {
+    // 1 player = 1 team: no last-team-standing contest, so it must not OVER at
+    // tick 1 (the 0-bot solo restart-loop bug). Runs until the team is gone.
+    let st: SimState = createInitialState(2468, fp, 1, { pvp: true });
+    expect(st.players.length).toBe(1);
+    for (let t = 0; t < 30; t++) st = tick(st, [IDLE]);
+    expect(st.phase).toBe(GamePhase.PLAYING);
+  });
+
+  it('a >=2-team match still ends at last team standing (rule unchanged)', () => {
+    const base = createInitialState(99, fp, 2, { pvp: true, teams: [0, 1] });
+    const players = base.players.map(clonePlayer);
+    players[1]!.alive = false; // team 1 wiped → team 0 is the last standing
+    let st: SimState = { ...base, players };
+    st = tick(st, [IDLE, IDLE]);
+    expect(st.phase).toBe(GamePhase.OVER);
+  });
+});
+
 describe('non-PvP default sanity', () => {
   it('omitting opts defaults team = slot, pvp false', () => {
     const s0 = createInitialState(12345, fp, 2);
