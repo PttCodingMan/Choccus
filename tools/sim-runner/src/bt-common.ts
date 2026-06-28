@@ -31,8 +31,13 @@ import {
   upsertPair,
 } from './bt-history';
 
-/** The v3 yardstick pool: the six gate archetypes (matches v3-bench). */
-export const V3_POOL: readonly string[] = [
+/** Which frozen AI version is the Bradley-Terry yardstick (rebuilt 2026-06-28:
+ *  v3 went stale after the 3-map/PUSH/movement sim overhaul → v7 re-ports the
+ *  same non-transitive roster onto the current engine). See client/src/ai/v7. */
+export const YARDSTICK_VERSION = 7;
+
+/** The yardstick pool: the six gate archetypes (the non-transitive RPS roster). */
+export const YARDSTICK_POOL: readonly string[] = [
   'hunter',
   'farmer',
   'zoner',
@@ -42,7 +47,21 @@ export const V3_POOL: readonly string[] = [
 ];
 
 /** The strength-floor judge, added to the pool only with --include-noise. */
-export const V3_NOISE = 'noise';
+export const YARDSTICK_NOISE = 'noise';
+
+/** "v7:hunter" → "hunter" (archetype without the version prefix). */
+export function stripVer(id: string): string {
+  const i = id.indexOf(':');
+  return i < 0 ? id : id.slice(i + 1);
+}
+
+/** True for a yardstick-pool agent id ("v7:<gate archetype>"), used to anchor
+ *  the BT fit / meta-rank to the reference set. Both checks matter: the version
+ *  prefix excludes placed challengers that reuse a pool archetype key (e.g.
+ *  v8:zoner), and the pool membership excludes the out-of-pool noise judge. */
+export function isYardstickPoolId(id: string): boolean {
+  return id.startsWith(`v${YARDSTICK_VERSION}:`) && YARDSTICK_POOL.includes(stripVer(id));
+}
 
 /** Directory holding the committed per-map history files. */
 export function historyDir(): string {
@@ -91,7 +110,7 @@ export interface PairTally {
 
 /**
  * Build a CHALLENGER-vs-pool game list: the challenger (pool index 0) plays each
- * opponent over both seatings × repeats × both maps, under the shared CRN
+ * opponent over both seatings × repeats × all maps, under the shared CRN
  * scenario seed. v3-internal duels are NOT scheduled — they already live in the
  * history. gameId increments in fixed order so results reassemble deterministically.
  */
@@ -103,7 +122,7 @@ export function buildChallengerGames(
 ): Game[] {
   const games: Game[] = [];
   let gameId = 0;
-  // Iterate the GLOBAL map index m (0=classic, 1=pirate) so scenarioSeed(m, r) is
+  // Iterate the GLOBAL map index m (0=classic, 1=pirate, 2=village) so scenarioSeed(m, r) is
   // identical whether or not a map is filtered out — CRN stays byte-stable. The
   // `maps` filter only skips scheduling, it never renumbers seeds.
   for (let m = 0; m < MAPS.length; m++) {
@@ -192,10 +211,10 @@ export function idOf(agent: Agent): string {
   return formatAgentId(agent.version, agent.archetypeKey);
 }
 
-/** Build the v3 pool agents (optionally including noise). */
-export function v3PoolAgents(includeNoise: boolean): Agent[] {
-  const arches = includeNoise ? [...V3_POOL, V3_NOISE] : [...V3_POOL];
-  return arches.map((a) => makeAgent(3, a));
+/** Build the yardstick pool agents (optionally including noise). */
+export function yardstickPoolAgents(includeNoise: boolean): Agent[] {
+  const arches = includeNoise ? [...YARDSTICK_POOL, YARDSTICK_NOISE] : [...YARDSTICK_POOL];
+  return arches.map((a) => makeAgent(YARDSTICK_VERSION, a));
 }
 
 /** Parse `--key=value` style args with a default. */

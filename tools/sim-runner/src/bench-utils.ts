@@ -42,9 +42,13 @@ export const BASE = 0x12345678;
 /** Difficulty is ignored when a strategy archetype is set; kept for the spec. */
 export const DIFFICULTY = 'normal';
 
-/** Map layouts the benches evaluate, each printed as its own breakdown. */
-export type MapKind = 'classic' | 'pirate';
-export const MAPS: readonly MapKind[] = ['classic', 'pirate'];
+/** Map layouts the benches evaluate, each printed as its own breakdown.
+ *  village is appended LAST so the global map index of classic(0)/pirate(1) is
+ *  unchanged → scenarioSeed(m, r) stays byte-stable for the existing maps (CRN
+ *  continuity); village just adds index 2. The bot engine reuses the classic
+ *  MapProfile for village (see v6/v7 BotController.profileFor). */
+export type MapKind = 'classic' | 'pirate' | 'village';
+export const MAPS: readonly MapKind[] = ['classic', 'pirate', 'village'];
 
 /** The four archetype keys, same as duel-bench / tournament, in FIXED order. */
 export const ARCHETYPE_KEYS: readonly string[] = [

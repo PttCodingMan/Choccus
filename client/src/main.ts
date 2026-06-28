@@ -27,7 +27,6 @@ import {
   AI_VERSIONS,
   type BotSpec,
   type IBotController,
-  LATEST_AI_VERSION,
   parseDifficulty,
 } from './ai';
 import { championFor } from './ai/mapChampions';
@@ -157,7 +156,12 @@ async function bootstrapSolo(params: URLSearchParams): Promise<void> {
   const botName = (slot: number): string => {
     const version = versionForSlot(slot, mapKind);
     const base = AI_VERSIONS[version]!.botNameFor(slot, effectiveSpec(mapKind));
-    return version === LATEST_AI_VERSION ? base : `${base} v${version}`;
+    // Suffix ` vN` only when a slot is NOT on the map's CHAMPION version (the
+    // default), so an overridden mixed-version match is legible. Compared against
+    // the champion — NOT bare LATEST_AI_VERSION — because the newest version (v7)
+    // is the frozen BT yardstick, not the live default; the champion bot must
+    // show no suffix.
+    return version === championFor(mapKind).version ? base : `${base} v${version}`;
   };
   // True when any of the active slots share a team (manual teams in play); used
   // to annotate HUD labels with the team number so groupings are legible.

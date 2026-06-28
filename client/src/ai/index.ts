@@ -17,6 +17,7 @@ import { v3Module } from './v3/module';
 import { v4Module } from './v4/module';
 import { v5Module } from './v5/module';
 import { v6Module } from './v6/module';
+import { v7Module } from './v7/module';
 
 /**
  * Caller-supplied bot configuration, version-agnostic. `strategyRaw` is the raw
@@ -46,9 +47,16 @@ export const AI_VERSIONS: Readonly<Record<number, AiVersionModule>> = Object.fre
   [v4Module.version]: v4Module,
   [v5Module.version]: v5Module,
   [v6Module.version]: v6Module,
+  [v7Module.version]: v7Module,
 });
 
-/** The newest registered AI version (the default for live play and tools). */
+/**
+ * The newest registered AI version. NOTE: v7 is the FROZEN BT yardstick roster,
+ * NOT a champion — so the live default bot is pinned by mapChampions.ts (v6),
+ * not by this max. Tools that use LATEST_AI_VERSION as a "current champion"
+ * proxy (matrix/duel/version-bench) are version-history utilities and may pick
+ * up v7; the shipping game never does. Keep the live champion in mapChampions.ts.
+ */
 export const LATEST_AI_VERSION: number = Math.max(
   ...Object.keys(AI_VERSIONS).map(Number),
 );
