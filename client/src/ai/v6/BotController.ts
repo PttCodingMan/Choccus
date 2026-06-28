@@ -109,6 +109,14 @@ const ESCAPE_SAFETY_TICKS = 32;
 /** Force a decision + fresh random direction after this many stuck ticks. */
 const STUCK_TICKS = 90;
 
+/** Survival-push reflex (see `confinedPush`): the EMPTY-reachable pocket must be
+ *  this small to count as "boxed in", and must stay un-grown this many ticks
+ *  before we shove a crate — the grace lets the normal bomb logic open the pocket
+ *  first (a successful bomb grows the pocket → resets the timer), so pushing is a
+ *  genuine last resort that never fires in open play. */
+const CONFINED_REGION_MAX = 16;
+const CONFINED_GRACE_TICKS = 20;
+
 /** Hard cap on how long we stay committed to an escape route before bailing. */
 const ESCAPE_COMMIT_MAX_TICKS = 120;
 
@@ -487,6 +495,11 @@ export class BotController {
   private lastTile = -1;
   private ticksSinceTileChange = 0;
 
+  /** Survival-push reflex: size of the EMPTY-reachable pocket last tick and how
+   *  many ticks since it last GREW. Drives `confinedPush` (boxed-in crate shove). */
+  private confinedRegionSize = -1;
+  private confinedTicks = 0;
+
   /** Effective Zoner stand-off ring radius for THIS decision: the per-map
    * `MapProfile.zoneStandoffTiles` override when set (>0), else the archetype's
    * own `tuning.zoneStandoff`. Resolved once per decision tick (profile in scope)
@@ -851,12 +864,191 @@ export class BotController {
     return count;
   }
 
+  /**
+   * SURVIVAL-PUSH REFLEX — the only place the bot uses the push-crate mechanic.
+   * When boxed into a tiny EMPTY pocket it can't bomb its way out of, shove a
+   * frontier crate to open escape / survival space (奶油啵啵爆: 推箱製造生存空間).
+   *
+   * Last-resort ONLY — gated so it can never perturb normal play:
+   *   • fires only when the bot's tile is calm (no incoming flame) and it has no
+   *     live bomb of its own (so it never overrides farming / fleeing);
+   *   • only when the EMPTY-reachable pocket is ≤ CONFINED_REGION_MAX tiles;
+   *   • only after the pocket has stayed un-grown for CONFINED_GRACE_TICKS — a
+   *     bomb that clears a brick grows the pocket and resets the timer, so if the
+   *     bot CAN bomb out it does, and pushing only kicks in when bombing is
+   *     impossible (exactly the pirate top-spawn deathbox).
+   * Returns the input to emit (navigate to the push-stance tile, then hold toward
+   * the crate so the sim's PUSH_CHARGE accumulates and the shove fires), or null
+   * to fall through to normal scoring. Pure / deterministic: BFS over
+   * DIRECTION_ORDER, integer compares, lowest-crate-index tie-break.
+   *
+   * ponytail: reflex only, no push-aware forward search. It opens space; it does
+   * NOT push crates offensively (shoving a crate at a foe) — add that to the
+   * scorer if that playstyle is ever wanted. Ceiling: one shove per grace window.
+   */
+  private confinedPush(
+    state: SimState,
+    myX: number,
+    myY: number,
+    slot: number,
+    fire: number,
+    tpt: number,
+    myDangerEarliest: number | undefined,
+  ): InputFrame | null {
+    // Calm pocket only: a threatened tile or our own live bomb means the escape /
+    // farming paths own this tick — stay out of their way and reset the timer.
+    if (myDangerEarliest !== undefined) {
+      this.confinedRegionSize = -1;
+      this.confinedTicks = 0;
+      return null;
+    }
+    for (const b of state.bombs) {
+      if (b.ownerSlot === slot) {
+        this.confinedRegionSize = -1;
+        this.confinedTicks = 0;
+        return null;
+      }
+    }
+
+    const open = openPassable(state);
+    const region = bfsReachable(state, myX, myY, open);
+    const size = region.size;
+
+    if (size > CONFINED_REGION_MAX) {
+      this.confinedRegionSize = size;
+      this.confinedTicks = 0;
+      return null;
+    }
+    // Ticks since the pocket last grew (a successful bomb grows it → reset).
+    if (this.confinedRegionSize >= 0 && size > this.confinedRegionSize) {
+      this.confinedTicks = 0;
+    } else {
+      this.confinedTicks += 1;
+    }
+    this.confinedRegionSize = size;
+    if (this.confinedTicks < CONFINED_GRACE_TICKS) return null;
+
+    // If a safe productive bomb is available anywhere in the pocket, the bot can
+    // open space the normal way — don't hijack it (protects healthy bombers even
+    // under a generous region cap). Only when NO safe bomb exists do we push.
+    if (this.regionHasSafeBomb(state, region, fire, tpt)) {
+      this.confinedTicks = 0;
+      return null;
+    }
+
+    // Find the frontier crate whose shove opens the most new EMPTY space. A crate
+    // is shovable if it sits next to a pocket tile, the tile beyond it is open and
+    // unoccupied; the gain models the crate ending up on that beyond tile.
+    let best: { stanceIdx: number; crateIdx: number; dir: number; gain: number } | null =
+      null;
+    for (const tileIdx of region.keys()) {
+      const tx = tileIdx % MAP_COLS;
+      const ty = Math.floor(tileIdx / MAP_COLS);
+      for (const d of DIRECTION_ORDER) {
+        const dx = dirDX(d);
+        const dy = dirDY(d);
+        const cx = tx + dx;
+        const cy = ty + dy; // crate tile
+        const bx = cx + dx;
+        const by = cy + dy; // tile the crate slides into
+        if (!inBounds(cx, cy) || !inBounds(bx, by)) continue;
+        if (state.map[idx(cx, cy)] !== TileKind.PUSH) continue;
+        if (!open(bx, by)) continue;
+        if (this.tileOccupiedByOther(state, bx, by, slot)) continue;
+        const crateIdx = idx(cx, cy);
+        const beyondIdx = idx(bx, by);
+        // Post-push reachability: crate tile opens, beyond tile becomes blocked.
+        const augmented: Passable = (x, y) => {
+          const i = idx(x, y);
+          if (i === crateIdx) return true;
+          if (i === beyondIdx) return false;
+          return open(x, y);
+        };
+        const gain = bfsReachable(state, myX, myY, augmented).size - size;
+        if (gain <= 0) continue;
+        if (
+          best === null ||
+          gain > best.gain ||
+          (gain === best.gain && crateIdx < best.crateIdx)
+        ) {
+          best = { stanceIdx: tileIdx, crateIdx, dir: d, gain };
+        }
+      }
+    }
+    if (best === null) return null;
+
+    // At the push-stance tile → hold toward the crate (sim charges → shove).
+    if (idx(myX, myY) === best.stanceIdx) {
+      return { dir: best.dir, action: ActionFlags.NONE };
+    }
+    // Otherwise step toward the stance tile over the pocket.
+    const stanceIdx = best.stanceIdx;
+    const hit = bfsFirstStep(
+      state,
+      myX,
+      myY,
+      (x, y) => idx(x, y) === stanceIdx,
+      open,
+    );
+    if (hit === null || hit.firstDir === Direction.NONE) return null;
+    return { dir: hit.firstDir, action: ActionFlags.NONE };
+  }
+
+  /**
+   * True if SOME tile in `region` allows a productive bomb (breaks ≥1 brick) with
+   * a refuge outside its blast reachable inside the fuse — i.e. the bot can open
+   * space by bombing rather than pushing. A lenient screen (the real scorer's gate
+   * is stricter); used only to SUPPRESS the push reflex, so erring lenient just
+   * stops pushing early (bot is already in a roomier pocket), never re-traps it.
+   */
+  private regionHasSafeBomb(
+    state: SimState,
+    region: ReadonlyMap<number, { dist: number; firstDir: number }>,
+    fire: number,
+    tpt: number,
+  ): boolean {
+    const open = openPassable(state);
+    for (const tileIdx of region.keys()) {
+      const tx = tileIdx % MAP_COLS;
+      const ty = Math.floor(tileIdx / MAP_COLS);
+      if (this.softDestroyedAt(state, tx, ty, fire) === 0) continue;
+      const blast = this.blastTiles(state, tx, ty, fire);
+      const hit = bfsFirstStep(
+        state,
+        tx,
+        ty,
+        (x, y) => !blast.has(idx(x, y)),
+        open,
+      );
+      if (hit !== null && this.escapeFitsInFuse(FUSE_TICKS, hit.dist, tpt)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** True if an alive OTHER player's tile is (x,y) (cheap crate-shove guard). */
+  private tileOccupiedByOther(
+    state: SimState,
+    x: number,
+    y: number,
+    slot: number,
+  ): boolean {
+    for (const p of state.players) {
+      if (p.slot === slot || !p.alive) continue;
+      if (tileOf(p.posX) === x && tileOf(p.posY) === y) return true;
+    }
+    return false;
+  }
+
   /** Reset transient timers (used when we cannot act this tick). */
   private resetActive(): void {
     this.committedDir = Direction.NONE as number;
     this.committedTicks = 0;
     this.reactionTimer = 0;
     this.threatPending = false;
+    this.confinedRegionSize = -1;
+    this.confinedTicks = 0;
     this.clearEscape();
   }
 
@@ -2446,6 +2638,20 @@ export class BotController {
       this.committedTicks = 0;
       return escapeFrame;
     }
+
+    // ---- SURVIVAL-PUSH REFLEX (boxed-in: shove a crate to open space) -------
+    // Last resort when confined to a tiny pocket with no safe bomb (e.g. the
+    // pirate top-spawn deathbox). Gated hard so it never fires in open play.
+    const pushFrame = this.confinedPush(
+      state,
+      myX,
+      myY,
+      slot,
+      myPlayer.fire,
+      tpt,
+      myDangerEarliest,
+    );
+    if (pushFrame !== null) return pushFrame;
 
     // ---- REACTION-DELAY FREEZE (humanizing) --------------------------------
     // A fresh threat to OUR tile, with fire not yet imminent, freezes us for the
