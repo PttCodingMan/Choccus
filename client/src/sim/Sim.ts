@@ -267,8 +267,18 @@ export function tick(state: SimState, inputs: readonly InputFrame[]): SimState {
   // sim by most-survivors → item tiebreak → draw (see Outcome.ts).
   const aliveTeams = new Set<number>();
   for (const p of players) if (p.alive) aliveTeams.add(p.team);
+  // A match that BEGAN with a single team (e.g. solo practice vs 0 bots) has no
+  // last-team-standing contest, so it must not end the instant it starts — it
+  // ends only when its sole team is wiped out (sudden-death squeeze) or at the
+  // time cap. Eliminated players stay in `players` with their team, so the set
+  // over ALL players is the initial team count. With >=2 teams `aliveTeams.size
+  // <= 1` is unchanged → byte-identical to the old rule for every real match.
+  const totalTeams = new Set<number>();
+  for (const p of players) totalTeams.add(p.team);
+  const eliminationOver =
+    totalTeams.size >= 2 ? aliveTeams.size <= 1 : aliveTeams.size === 0;
   const phase =
-    aliveTeams.size <= 1 || nextTick >= MATCH_MAX_TICKS
+    eliminationOver || nextTick >= MATCH_MAX_TICKS
       ? GamePhase.OVER
       : GamePhase.PLAYING;
 
