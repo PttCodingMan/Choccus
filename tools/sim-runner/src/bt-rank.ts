@@ -1,16 +1,16 @@
 /**
- * Place a new strategy on the v3 Bradley-Terry yardstick.
+ * Place a new strategy on the Bradley-Terry yardstick (the frozen v7 roster).
  *
- * Runs the target (e.g. v4:hunter) vs the v3 pool — both seatings × repeats ×
- * both maps, CRN — on the shipping sim, folds the duels into the persistent
- * history (upsert-by-pair), then re-fits BT jointly over the WHOLE accumulated
- * history (old v3 round-robin + every version placed so far) and prints, per
- * map, the global Elo ladder with the target slotted in. Because the fit anchors
- * the v3 pool mean to 1500, the target's Elo is directly comparable to any other
- * version placed the same way — even versions it never played, via shared v3
- * opponents (sparse joint estimation).
+ * Runs the target (e.g. v8:hunter) vs the yardstick pool — both seatings ×
+ * repeats × all maps, CRN — on the shipping sim, folds the duels into the
+ * persistent history (upsert-by-pair), then re-fits BT jointly over the WHOLE
+ * accumulated history (the v7 round-robin + every version placed so far) and
+ * prints, per map, the global Elo ladder with the target slotted in. Because the
+ * fit anchors the yardstick pool mean to 1500, the target's Elo is directly
+ * comparable to any other version placed the same way — even versions it never
+ * played, via shared yardstick opponents (sparse joint estimation).
  *
- *   npm run bt-rank -- --target=v4:hunter [--repeats=150] [--workers=8]
+ *   npm run bt-rank -- --target=v8:hunter [--repeats=150] [--workers=8]
  *                      [--opponents=hunter,zoner] [--include-noise] [--no-write]
  *
  * Win encoding (post sudden-death): a win = killed the opponent (bomb OR arena-
@@ -27,11 +27,13 @@ import {
 } from './bradley-terry';
 import {
   type PairTally,
-  V3_NOISE,
-  V3_POOL,
+  YARDSTICK_NOISE,
+  YARDSTICK_POOL,
+  YARDSTICK_VERSION,
   arg,
   buildChallengerGames,
   idOf,
+  isYardstickPoolId,
   mergeIntoHistories,
   parseChallenger,
   runAndTally,
@@ -58,15 +60,15 @@ async function main(): Promise<void> {
   const oppArches = arg(argv, 'opponents', '')
     ? arg(argv, 'opponents', '').split(',').map((s) => s.trim().toLowerCase())
     : includeNoise
-      ? [...V3_POOL, V3_NOISE]
-      : [...V3_POOL];
+      ? [...YARDSTICK_POOL, YARDSTICK_NOISE]
+      : [...YARDSTICK_POOL];
 
-  // Pool = [challenger, ...v3 opponents]; challenger is index 0.
-  const agents = [challenger, ...oppArches.map((a) => makeAgent(3, a))];
+  // Pool = [challenger, ...yardstick opponents]; challenger is index 0.
+  const agents = [challenger, ...oppArches.map((a) => makeAgent(YARDSTICK_VERSION, a))];
   const opponents = oppArches.map((_, i) => i + 1);
 
   console.log(
-    `Placing ${idOf(challenger)} vs v3 pool [${oppArches.join(', ')}]\n` +
+    `Placing ${idOf(challenger)} vs yardstick pool [${oppArches.join(', ')}]\n` +
       `  ${repeats} repeats × 2 seatings × ${selMaps.length} map(s) [${selMaps.join(', ')}], workers=${workers}` +
       (write ? '' : '  (--no-write: not persisting)'),
   );
@@ -107,9 +109,9 @@ function reportMap(
     return;
   }
 
-  // Anchor the fit to the v3 pool (the reference set), so 1500 = average v3.
+  // Anchor the fit to the yardstick pool (the reference set), so 1500 = pool avg.
   const anchorIndices = ids
-    .map((id, i) => (V3_POOL.includes(stripVer(id)) && id.startsWith('v3:') ? i : -1))
+    .map((id, i) => (isYardstickPoolId(id) ? i : -1))
     .filter((i) => i >= 0);
   const r = fitBradleyTerry(toTally(history, ids), { anchorIndices });
 
@@ -117,7 +119,7 @@ function reportMap(
     .map((id, i) => ({ id, elo: r.elo[i]!, idx: i }))
     .sort((a, b) => b.elo - a.elo || a.id.localeCompare(b.id));
 
-  console.log(`\n${map} Bradley-Terry ladder (anchor: v3 pool mean = 1500):`);
+  console.log(`\n${map} Bradley-Terry ladder (anchor: yardstick pool mean = 1500):`);
   for (let rank = 0; rank < ranked.length; rank++) {
     const row = ranked[rank]!;
     const mark = row.id === targetId ? '  ← target' : '';
@@ -143,12 +145,6 @@ function reportMap(
       `    vs ${oppId.padEnd(12)} ${(obs * 100).toFixed(0).padStart(3)}%  (pred ${(pred * 100).toFixed(0).padStart(3)}%)  ${delta >= 0 ? '+' : ''}${delta.toFixed(0)}${flag}`,
     );
   }
-}
-
-/** "v3:hunter" → "hunter" (archetype without the version prefix). */
-function stripVer(id: string): string {
-  const i = id.indexOf(':');
-  return i < 0 ? id : id.slice(i + 1);
 }
 
 main().catch((e) => {

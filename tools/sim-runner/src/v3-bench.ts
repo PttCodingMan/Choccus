@@ -69,10 +69,18 @@ const V2_ARCHES: readonly string[] = ['aggressor', 'chaosv'];
  * "classic champion = v2-chaosv" was from the mixed v1+v2 8-agent matrix, not the
  * v2-internal ranking the goal's "v2's strongest strategy" refers to.
  */
+// v3-bench is a LEGACY v1/v2/v3 historical tool that predates the village map;
+// it stays scoped to the two original maps (see LEGACY_MAPS below). The village
+// entry exists only to satisfy Record<MapKind, …> and is never read.
 const V2_STRONGEST: Readonly<Record<MapKind, string>> = {
   pirate: 'aggressor',
   classic: 'aggressor',
+  village: 'aggressor',
 };
+
+/** Maps this legacy bench runs — the two it was written for (NOT global MAPS,
+ *  which now also has village; v2/v3 predate it). */
+const LEGACY_MAPS: readonly MapKind[] = ['classic', 'pirate'];
 
 /**
  * KILL-EDGE gate (replaces the old absolute "pure-kill >=80%"). A pure-kill 80%
@@ -109,7 +117,7 @@ function parseArgs(argv: string[]): Options {
   let v3: readonly string[] = V3_ARCHES;
   let v2: readonly string[] = V2_ARCHES;
   let workers = os.cpus().length;
-  let maps: readonly MapKind[] = MAPS;
+  let maps: readonly MapKind[] = LEGACY_MAPS;
   for (const arg of argv) {
     if (arg.startsWith('--repeats=')) repeats = Number(arg.slice('--repeats='.length));
     else if (arg.startsWith('--v3=')) {
@@ -120,11 +128,11 @@ function parseArgs(argv: string[]): Options {
       workers = Number(arg.slice('--workers='.length));
     } else if (arg.startsWith('--map=')) {
       const want = arg.slice('--map='.length).split(',').map((s) => s.trim());
-      maps = MAPS.filter((m) => want.includes(m));
+      maps = LEGACY_MAPS.filter((m) => want.includes(m));
     }
   }
   workers = Math.max(1, Math.floor(workers));
-  if (maps.length === 0) maps = MAPS;
+  if (maps.length === 0) maps = LEGACY_MAPS;
   return { repeats, v3, v2, workers, maps };
 }
 

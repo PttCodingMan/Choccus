@@ -1,16 +1,17 @@
 /**
- * Seed the Bradley-Terry history with the v3 yardstick (one-time, re-run on a v3
- * change). Runs the v3 pool's internal 1v1 round-robin — every unordered pair,
- * both seatings, both maps, R repeats, under CRN — on the SHIPPING sim (sudden
- * death live), folds the results into per-map head-to-head tallies and writes
- * the committed bt-history/{classic,pirate}.json from scratch.
+ * Seed the Bradley-Terry history with the yardstick (one-time, re-run on a
+ * yardstick-version change). Runs the frozen v7 pool's internal 1v1 round-robin
+ * — every unordered pair, both seatings, all maps, R repeats, under CRN — on the
+ * SHIPPING sim (sudden death live, PUSH crates, free-movement), folds the
+ * results into per-map head-to-head tallies and writes the committed
+ * bt-history/{classic,pirate,village}.json from scratch.
  *
  *   npm run bt-seed -- [--repeats=150] [--workers=8] [--include-noise]
  *
  * These files are the fixed reference field: bt-rank drops a new version's
- * strategy into them and the joint fit anchors the v3 pool mean to Elo 1500, so
- * v4 / v5 ratings stay comparable. Re-seeding REPLACES the v3 pairs (upsert),
- * so the file always reflects the current v3 code.
+ * strategy into them and the joint fit anchors the yardstick pool mean to Elo
+ * 1500, so v8+ ratings stay comparable. Re-seeding REPLACES the yardstick pairs
+ * (fresh), so the file always reflects the current frozen v7 code.
  */
 
 import { BASE, MAPS, type MapKind } from './bench-utils';
@@ -23,7 +24,7 @@ import {
   mergeIntoHistories,
   runAndTally,
   saveHistory,
-  v3PoolAgents,
+  yardstickPoolAgents,
 } from './bt-common';
 
 async function main(): Promise<void> {
@@ -39,9 +40,9 @@ async function main(): Promise<void> {
     ? (mapArg.split(',').map((s) => s.trim()) as MapKind[]).filter((m) => MAPS.includes(m))
     : MAPS;
 
-  const agents = v3PoolAgents(includeNoise);
+  const agents = yardstickPoolAgents(includeNoise);
   console.log(
-    `Seeding BT history: v3 pool [${agents.map(idOf).join(', ')}]\n` +
+    `Seeding BT history: yardstick pool [${agents.map(idOf).join(', ')}]\n` +
       `  ${repeats} repeats × 2 seatings × ${selMaps.length} map(s) [${selMaps.join(', ')}], workers=${workers}`,
   );
 
@@ -62,7 +63,7 @@ async function main(): Promise<void> {
     const ranked = ids
       .map((id, i) => ({ id, elo: r.elo[i]! }))
       .sort((a, b) => b.elo - a.elo);
-    console.log(`\n${map} v3 yardstick (anchor: pool mean = 1500):`);
+    console.log(`\n${map} v7 yardstick (anchor: pool mean = 1500):`);
     for (const row of ranked) console.log(`  ${row.id.padEnd(14)} ${row.elo.toFixed(0)}`);
     console.log(`  wrote ${ids.length} agents, ${history.pairs.length} pairs`);
   }

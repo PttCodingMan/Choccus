@@ -42,7 +42,7 @@ import {
   toTally,
 } from './bt-history';
 import { fitBradleyTerry, predictedWinProb } from './bradley-terry';
-import { V3_NOISE, V3_POOL, arg, loadHistory } from './bt-common';
+import { YARDSTICK_NOISE, arg, isYardstickPoolId, loadHistory } from './bt-common';
 
 /** A complete pairwise win-probability matrix plus which cells were imputed. */
 interface WinMatrix {
@@ -83,7 +83,7 @@ function reportMap(
 ): void {
   // Agent set: everything in the history, optionally dropping the noise judge.
   let ids = agentIds(history);
-  if (!opts.includeNoise) ids = ids.filter((id) => stripVer(id) !== V3_NOISE);
+  if (!opts.includeNoise) ids = ids.filter((id) => stripVer(id) !== YARDSTICK_NOISE);
   const n = ids.length;
   if (n < 2) {
     console.log(`\n${map}: not enough agents in history.`);
@@ -92,9 +92,9 @@ function reportMap(
 
   const { m, imputed } = buildWinMatrix(history, ids);
 
-  // --- BT (anchored to v3 pool mean = 1500), for the side-by-side column. ----
+  // --- BT (anchored to yardstick pool mean = 1500), for the side-by-side col. -
   const anchorIndices = ids
-    .map((id, i) => (V3_POOL.includes(stripVer(id)) && id.startsWith('v3:') ? i : -1))
+    .map((id, i) => (isYardstickPoolId(id) ? i : -1))
     .filter((i) => i >= 0);
   const bt = fitBradleyTerry(toTally(history, ids), { anchorIndices });
   const btElo = ids.map((_, i) => bt.elo[i]!);
@@ -170,7 +170,7 @@ function buildWinMatrix(history: History, ids: string[]): WinMatrix {
   const n = ids.length;
   const { wins, games } = toTally(history, ids);
   const anchorIndices = ids
-    .map((id, i) => (V3_POOL.includes(stripVer(id)) && id.startsWith('v3:') ? i : -1))
+    .map((id, i) => (isYardstickPoolId(id) ? i : -1))
     .filter((i) => i >= 0);
   const bt = fitBradleyTerry({ wins, games }, { anchorIndices });
   const beta = bt.beta;
