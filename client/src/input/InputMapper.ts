@@ -49,7 +49,10 @@ export function sampleLocalInput(keyboard: KeyboardInput): InputFrame {
   if (keyboard.isDown('ArrowDown') || keyboard.isDown('KeyS')) dir |= Direction.DOWN;
   if (keyboard.isDown('ArrowLeft') || keyboard.isDown('KeyA')) dir |= Direction.LEFT;
   if (keyboard.isDown('ArrowRight') || keyboard.isDown('KeyD')) dir |= Direction.RIGHT;
-  const action: number = keyboard.isDown('Space')
+  // Bomb is edge-triggered in the sim with no input buffer, so read it through
+  // the keyboard's one-shot press latch: a quick tap that releases between two
+  // samples is still reported once (see KeyboardInput.consumePress).
+  const action: number = keyboard.consumePress('Space')
     ? ActionFlags.BOMB
     : ActionFlags.NONE;
   return { dir, action };
@@ -72,7 +75,8 @@ export function sampleInputs(
     if (keyboard.isDown(map.down)) dir |= Direction.DOWN;
     if (keyboard.isDown(map.left)) dir |= Direction.LEFT;
     if (keyboard.isDown(map.right)) dir |= Direction.RIGHT;
-    const action: number = keyboard.isDown(map.bomb)
+    // Edge-latched bomb read (see sampleLocalInput / KeyboardInput.consumePress).
+    const action: number = keyboard.consumePress(map.bomb)
       ? ActionFlags.BOMB
       : ActionFlags.NONE;
     frames.push({ dir, action });

@@ -53,6 +53,14 @@ import type { MatchStartMsg, ReplayTick, ReplayUploadMsg } from './protocolCodec
 const COUNTDOWN_MS = 3000;
 const GO_MS = 600;
 
+/**
+ * Per-pump tick cap for the HIDDEN-tab background pump. The engine clamps a
+ * single update() delta to 1000 ms (≈60 ticks), so this finite cap comfortably
+ * covers a full catch-up while staying well clear of any runaway. Foreground
+ * frames keep the engine's small default cap (paint/spiral protection).
+ */
+const HIDDEN_PUMP_MAX_TICKS = 256;
+
 /** A finished match's self-contained replay (the ReplayUpload payload). */
 export type MatchReplay = Omit<ReplayUploadMsg, 'type'>;
 
@@ -195,7 +203,11 @@ export class MatchRunner {
     this.rafId = requestAnimationFrame(this.frame);
     this.bgPump = setInterval(() => {
       if (document.visibilityState === 'hidden' && !this.stopped) {
-        this.pump(performance.now());
+        // Hidden: no paint to block, so let the engine fully catch up to the
+        // elapsed wall clock (60 Hz) instead of the foreground per-frame cap.
+        // A throttled hidden tab otherwise produces only ~8 ticks/s and stalls
+        // the whole lockstep room (see LockstepEngine.update maxTicks).
+        this.pump(performance.now(), HIDDEN_PUMP_MAX_TICKS);
       }
     }, 250);
   }
@@ -280,10 +292,11 @@ export class MatchRunner {
     this.armCountdown();
   }
 
-  private pump(now: number): void {
+  private pump(now: number, maxTicks?: number): void {
     const dt = this.last === undefined ? 0 : (now - this.last) * this.speed;
     this.last = now;
-    this.engine.update(dt);
+    if (maxTicks === undefined) this.engine.update(dt);
+    else this.engine.update(dt, maxTicks);
   }
 
   private readonly frame = (now: number): void => {

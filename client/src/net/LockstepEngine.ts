@@ -282,13 +282,22 @@ export class LockstepEngine {
    * Fixed-timestep accumulator step. Call once per animation frame (or from
    * any wall clock); advances zero or more sim ticks depending on elapsed
    * time AND input availability.
+   *
+   * `maxTicks` overrides the per-call burst cap (default MAX_TICKS_PER_FRAME).
+   * The foreground rAF path keeps the small cap so a slow-CPU frame can't run an
+   * unbounded catch-up burst that blocks paint. The hidden-tab background pump
+   * passes a large cap instead: there is no rendering to block while hidden, and
+   * the whole point of that pump is to keep this client at 60 Hz so it does not
+   * stall the rest of the lockstep room (a cap of 2 there throttles a hidden tab
+   * to ~8 ticks/s and drags the entire room down with it). The burst is still
+   * bounded by MAX_ACC_MS and input availability.
    */
-  update(dtMs: number): void {
+  update(dtMs: number, maxTicks: number = MAX_TICKS_PER_FRAME): void {
     if (this.desynced) return;
     this.acc += Math.min(Math.max(dtMs, 0), MAX_UPDATE_DT_MS);
     this.blocked = false;
     let steps = 0;
-    while (this.acc >= TICK_MS && steps < MAX_TICKS_PER_FRAME) {
+    while (this.acc >= TICK_MS && steps < maxTicks) {
       if (!this.tryAdvanceTick()) {
         this.blocked = true;
         if (this.acc > MAX_ACC_MS) this.acc = MAX_ACC_MS;
