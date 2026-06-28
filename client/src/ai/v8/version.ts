@@ -32,7 +32,15 @@
  * Both mechanisms are the byte-for-byte v6→v7 engine delta; v8 is otherwise the
  * v6 champion roster verbatim (zoner backbone + aggressive hunter front). On the
  * v7 yardstick, v8:zoner is byte-identical to the BT #1 v7:zoner and so ranks #1
- * on all three maps; the live champion is the aggressive v8:hunter (ship-gated by
- * direct CRN vs the outgoing v6:hunter on all three maps).
+ * on all three maps.
+ *
+ * LIVE CHAMPION = v8:zoner (mapChampions.ts), chosen 2026-06-28: the two rules are
+ * a develop-and-control doctrine only the Zoner can honour — it FARMS (Rule 1 is
+ * live) and HOLDS CENTRE (Rule 2 is live). The aggressive Hunter is `pureHunt` (it
+ * never farms, so Rule 1 is inert for it) and the ship-gate measured Rule 2
+ * REGRESSING it on cramped classic (v8:hunter vs v6:hunter: classic 46.3%, pirate
+ * 50.0%, village 65.8% — fails the ≥50%-everywhere gate). So the bot that is #1 on
+ * all three maps AND embodies both rules is the Zoner; the aggressive Hunter stays
+ * selectable via ?strategy=hunter but is no longer the default.
  */
 export const AI_VERSION = 8;
