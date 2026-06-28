@@ -18,8 +18,8 @@ import { describe, expect, it } from 'vitest';
 import { TileKind } from '../../../shared/types';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
 import { createInitialState, tick, type SimState } from '../../../client/src/sim/Sim';
-import { BotController } from '../../../client/src/ai/v6/BotController';
-import { botSeed, tuningFor, type Difficulty } from '../../../client/src/ai/v6/BotConfig';
+import { BotController } from '../../../client/src/ai/v8/BotController';
+import { botSeed, tuningFor, type Difficulty } from '../../../client/src/ai/v8/BotConfig';
 import { measureSelfTrapRate } from '../src/selfkill';
 import { yieldToEventLoop } from '../src/async-yield';
 
