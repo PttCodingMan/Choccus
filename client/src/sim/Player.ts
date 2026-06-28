@@ -249,19 +249,19 @@ function advanceAxis(
  * half a tile (the near lane is ≤½ tile away, the far lane ≥½ tile, so only wide
  * tolerances reach the far lane). Smaller = stricter / less forgiving.
  *
- * Corner-cut (no sideways shuffle): the qualifying lane `r` is one the body
- * ALREADY overlaps (the near lane it sits in, or the far lane it leans into), so
- * snapping `b` straight to `r`'s centre in a SINGLE tick moves only TOWARD a tile
- * the footprint already covers — it shrinks/relocates the straddle and enters NO
- * new perpendicular tile, hence is clip-safe at any distance ≤ ½ tile (the gate
- * caps the snap at `tolMt` ≤ 500). After the snap the body is dead-centre on `r`
- * (footprint = just lane `r`, whose opening ahead is verified open), so it then
- * advances forward by the full per-tick `speed` THE SAME TICK via `advanceAxis`
- * (which clamps flush on any wall further ahead). The result is a true diagonal
- * round-the-corner: forward + perpendicular in one tick, never the old multi-tick
- * "drift sideways with zero forward progress" hitch. The forward step is gated on
- * the POST-snap footprint (lane `r` only), so we never advance while still
- * overlapping the blocking wall lane.
+ * Constant-speed corner-cut: the qualifying lane `r` is one the body ALREADY
+ * overlaps (the near lane it sits in, or the far lane it leans into), so moving
+ * `b` toward `r`'s centre only shrinks/relocates the straddle and enters NO new
+ * perpendicular tile (clip-safe; the gate caps the offset at `tolMt` ≤ 500). The
+ * per-tick budget `speed` is spent FIRST closing that perpendicular offset, then
+ * any leftover advancing forward in lane `r` — so the round-the-corner motion
+ * keeps the body's per-tick displacement at the SAME `speed` as straight-line
+ * movement, never a free snap + full forward step (which read as an acceleration
+ * burst and carried the body past the intended bomb tile). If the offset exceeds
+ * one tick's budget the body glides toward the lane at full speed with no forward
+ * progress that tick (re-entered next tick with a smaller offset); the forward
+ * step runs only once the body is dead-centre on `r`, so it never advances while
+ * still overlapping the blocking wall lane.
  *
  * Because it needs a blocking wall, it never fires in the open. Returns [newA, newB].
  */
@@ -294,13 +294,22 @@ function moveAxis(
     // enterable to slide into it (it is one tile off the body's nominal lane).
     if (solidAt(blockedTile, r)) continue;
     if (r !== near && solidAt(blockedTile - s, r)) continue;
-    // Snap straight to lane `r`'s centre this tick (clip-safe: moving toward an
-    // already-overlapped lane enters no new perpendicular tile — see header).
-    const b1 = r * MILLITILE;
-    // Now dead-centre on `r`; spend the full per-tick budget advancing forward.
+    // CONSTANT-SPEED corner (奶油啵啵爆 手感): spend the per-tick budget `speed`
+    // FIRST closing the perpendicular offset to lane `r`, then any leftover
+    // advancing forward — the body rounds the corner at the SAME speed, not a free
+    // snap + full forward step (which read as a burst and overshot the bomb tile).
+    const perpNeeded = Math.abs(b - r * MILLITILE);
+    if (perpNeeded > speed) {
+      // Can't fully align this tick → glide toward the lane at full speed, no
+      // forward progress yet (re-entered next tick with a smaller offset).
+      const dir = r * MILLITILE > b ? 1 : -1;
+      return [a, b + dir * speed];
+    }
+    // Aligned this tick; spend the leftover budget advancing forward in lane `r`.
     // advanceAxis checks lane `r` only (post-snap footprint) and clamps flush on
     // any wall further ahead, so the diagonal never tunnels.
-    const [a2] = advanceAxis(solidAt, wallAt, a, r, r, s, speed);
+    const b1 = r * MILLITILE;
+    const [a2] = advanceAxis(solidAt, wallAt, a, r, r, s, speed - perpNeeded);
     return [a2, b1];
   }
   return [a, b];

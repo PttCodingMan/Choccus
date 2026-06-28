@@ -75,18 +75,37 @@ describe('corner-slide (only when blocked)', () => {
     expect(x).toBeGreaterThan(5 * MILLITILE); // and kept going right
   });
 
-  it('corner-cut makes forward progress the SAME tick as the alignment snap (no sideways shuffle)', () => {
-    // Off-centre by 400 mt — far more than one tick of speed (~83 mt), so the old
-    // model would drift sideways for ~5 ticks with x frozen before the corner
-    // completed. The corner-cut snaps to the lane AND advances forward in tick 1.
+  it('rounds the corner at CONSTANT speed — no per-tick burst, never exceeds move speed', () => {
+    // Off-centre by 400 mt — far more than one tick of speed (~83 mt). The old
+    // model snapped fully to the lane (free) AND advanced forward the SAME tick: a
+    // >1-tile burst that read as acceleration and overshot the intended bomb tile.
+    // The constant-speed model spends each tick's budget closing the offset first,
+    // leftover forward — so NO tick ever moves more than `V`, yet the corner still
+    // completes.
     const grid = emptyGrid();
     grid[idx(6, 6)] = TileKind.HARD; // wall ahead in the leaned-into (lower) row
     const x0 = 5 * MILLITILE;
     let x = x0;
     let y = 5 * MILLITILE + 400; // straddles rows 5 & 6 (400 mt ≤ tol 500), nominal row 5
+
+    // Tick 1: offset (400) > V, so the body glides toward the lane with NO forward
+    // progress yet — the constant-speed contract, not the old free-snap burst.
     [x, y] = stepEntity(grid, [], x, y, Direction.RIGHT, V, 500);
-    expect(y).toBe(5 * MILLITILE); // snapped fully to the lane in ONE tick (no multi-tick drift)
-    expect(x).toBeGreaterThan(x0); // …and made forward progress the SAME tick
+    expect(x).toBe(x0); // no forward burst while still aligning
+    expect(y).toBe(5 * MILLITILE + 400 - V); // exactly one step toward the lane
+
+    // Across the rest of the corner, no single tick may move more than V total,
+    // and the body must eventually align to the open lane and progress forward.
+    let aligned = false;
+    for (let i = 0; i < 20; i++) {
+      const [nx, ny] = stepEntity(grid, [], x, y, Direction.RIGHT, V, 500);
+      expect(Math.abs(nx - x) + Math.abs(ny - y)).toBeLessThanOrEqual(V); // constant speed
+      x = nx;
+      y = ny;
+      if (y === 5 * MILLITILE) aligned = true;
+    }
+    expect(aligned).toBe(true); // snapped to the open lane within budget
+    expect(x).toBeGreaterThan(x0); // …and rounded the corner forward
   });
 
   it('no-clip: a body driven around a wall corner never ends a tick inside a solid tile', () => {
