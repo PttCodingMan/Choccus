@@ -655,16 +655,29 @@ export class BotController {
    */
   private readonly profileOverride: MapProfile | null;
 
+  /**
+   * v8 ADAPTIVE COUNTER per-instance override. When true, the opponent-counter
+   * detector runs for THIS bot regardless of the global ADAPT_COUNTER flag (which
+   * stays the committed OFF for the champion + the v5-screen workflow). It exists
+   * so an in-process harness (adapt-probe.ts) can pit an adaptive-ON and an
+   * adaptive-OFF v8 against the SAME opponent under identical CRN seeds, for a
+   * clean paired delta — without re-running the process with the flag flipped.
+   * Default false ⇒ the normal factory path is byte-identical to the champion.
+   */
+  private readonly adaptive: boolean;
+
   constructor(
     rngSeed: number,
     tuning: BotTuning,
     slot: number,
     profileOverride: MapProfile | null = null,
+    adaptive = false,
   ) {
     this.rng = rngSeed >>> 0;
     this.tuning = tuning;
     this.ctorSlot = slot;
     this.profileOverride = profileOverride;
+    this.adaptive = adaptive;
   }
 
   /**
@@ -2951,7 +2964,7 @@ export class BotController {
     // exactly against a foe trying to wall it in — and stays at baseline (heat 0)
     // vs a passive foe. The heat is always updated (cools when no foe / calm) so a
     // brief contact does not leave it stuck on.
-    if (ADAPT_COUNTER) {
+    if (ADAPT_COUNTER || this.adaptive) {
       let liveFoeBombs = 0;
       for (const b of state.bombs) {
         for (const p of state.players) {
