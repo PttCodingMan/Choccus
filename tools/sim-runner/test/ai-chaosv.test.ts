@@ -36,9 +36,9 @@ import { type InputFrame } from '../../../client/src/sim/InputBuffer';
 import { idx, inBounds } from '../../../client/src/sim/Map';
 import { tileOf } from '../../../client/src/sim/Player';
 import { createInitialState, tick, type SimState } from '../../../client/src/sim/Sim';
-import { BotController } from '../../../client/src/ai/v6/BotController';
-import { botSeed } from '../../../client/src/ai/v6/BotConfig';
-import { STRATEGIES } from '../../../client/src/ai/v6/Strategies';
+import { BotController } from '../../../client/src/ai/v8/BotController';
+import { botSeed } from '../../../client/src/ai/v8/BotConfig';
+import { STRATEGIES } from '../../../client/src/ai/v8/Strategies';
 
 // v2 had a dedicated 'chaosv' V-chain archetype; the live v5 backbone collapsed
 // to a single Zoner strategy (chaosv's descendant lineage went v3:trapper →
