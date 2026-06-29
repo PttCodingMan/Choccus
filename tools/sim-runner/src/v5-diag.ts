@@ -35,11 +35,11 @@ import { arg, parseChallenger } from './bt-common';
 const STEP_DANGER_HORIZON = SPARK_TICKS + 4;
 const SURV_SAFE_HORIZON = FUSE_TICKS;
 const WINDOW = 600; // 10 s @ 60 Hz — the WIN-game "last 10 s mean" baseline window.
-/** Seconds-before-death to snapshot the target's trajectory at. DENSE through the
- *  0–10 s collapse window (the seal forms "in the last few seconds" — coarse 1 s/
- *  10 s endpoints can't locate WHEN branches collapse), then sparse out to 20 s to
- *  test for a slower strategic drift (devGap / freeSpace) that precedes the seal. */
-const TRACE_SECONDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20];
+/** Seconds-before-death to snapshot the target's trajectory at: per-second through
+ *  the 0–10 s window, which is where the seal collapses escape branches (the coarse
+ *  1 s/10 s endpoints couldn't locate WHEN). The sparse 12–20 s tail was dropped —
+ *  it carried no signal (branches stable, devGap flat that far out). */
+const TRACE_SECONDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 /** Per-tick trajectory ring cap: must cover the furthest TRACE_SECONDS offset. */
 const RING_CAP = (Math.max(...TRACE_SECONDS) + 2) * 60; // 22 s of history.
 const FLOOD_CAP = 12;
