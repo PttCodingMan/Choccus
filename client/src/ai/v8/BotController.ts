@@ -398,6 +398,9 @@ const HUNT_SURV_FLOOR = 4;
 /** Center tile (used by positionValue): floor(MAP_COLS/2), floor(MAP_ROWS/2). */
 const CENTER_X = Math.floor(MAP_COLS / 2); // 7
 const CENTER_Y = Math.floor(MAP_ROWS / 2); // 6
+/** Manhattan radius over which the Voronoi centrality weight tapers to 0 (tiles
+ *  this far from centre get no central bonus). 8 covers the central core. */
+const VORONOI_CENTRAL_SPAN = 8;
 
 /**
  * Per-tile SUDDEN-DEATH SURVIVAL RANK: how LATE a tile hardens in the inward
@@ -625,6 +628,11 @@ export class BotController {
    * open pirate map the mid-game squeeze helps but the symmetric SHRINK endgame is
    * a coin-flip the term only destabilises. classic/village false. */
   private curVoronoiShrinkOff = false;
+
+  /** Effective VORONOI centrality weight (`MapProfile.voronoiCentralW`). 0 =
+   * uniform tile weight (proven). > 0 weights central owned tiles more, so the
+   * squeeze prefers the late-hardening centre and pushes the foe outward. */
+  private curVoronoiCentralW = 0;
 
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
@@ -1510,6 +1518,7 @@ export class BotController {
     my: number,
     foeTiles: ReadonlySet<number>,
     foeLambdaPct: number,
+    centralW: number,
   ): number {
     const base = openPassable(state);
     const N = MAP_COLS * MAP_ROWS;
@@ -1550,21 +1559,31 @@ export class BotController {
         }
       }
     }
-    let mine = 0;
-    let foe = 0;
+    // Each owned safe tile contributes a CENTRALITY weight (report §3.2 chamber /
+    // §3.7 P2): central tiles are worth more, so the squeeze prefers commanding the
+    // late-hardening CENTRE and pushing the foe to the edge (where the shrink kills
+    // it first). centralW=0 → uniform weight 100 → returns the plain tile count
+    // (byte-identical to the proven λ-only diff). Scaled by /100 so the magnitude
+    // stays ≈ a tile count and voronoiWeight does not need retuning.
+    let mineW = 0;
+    let foeW = 0;
     for (let t = 0; t < N; t++) {
       const o = owner[t]!;
       if (o !== 1 && o !== 2) continue;
       const e = danger.earliestLethal(t);
       if (e !== undefined && e <= SURV_SAFE_HORIZON) continue; // not safe-dwell.
-      if (o === 1) mine += 1;
-      else foe += 1;
+      const cx = t % MAP_COLS;
+      const cy = (t - cx) / MAP_COLS;
+      const w =
+        100 +
+        centralW * Math.max(0, VORONOI_CENTRAL_SPAN - (Math.abs(cx - CENTER_X) + Math.abs(cy - CENTER_Y)));
+      if (o === 1) mineW += w;
+      else foeW += w;
     }
     // report P4: S_self − λ·S_opp. λ (foeLambdaPct/100) trades pure DEFENSE (λ=0:
-    // maximise my own uncontested safe space — drift away from a passive farmer's
-    // bomb field) against OFFENSE (λ=100: also compress the foe's space — advance
-    // to seal an active presser). Tuned per map.
-    return mine - Math.floor((foe * foeLambdaPct) / 100);
+    // maximise my own uncontested safe space) against OFFENSE (λ=100: also compress
+    // the foe's space). Tuned per map.
+    return Math.floor((mineW - Math.floor((foeW * foeLambdaPct) / 100)) / 100);
   }
 
   /**
@@ -2936,6 +2955,7 @@ export class BotController {
     this.curVoronoiWeight = profile.voronoiWeight;
     this.curVoronoiFoeLambda = profile.voronoiFoeLambda;
     this.curVoronoiShrinkOff = profile.voronoiShrinkOff;
+    this.curVoronoiCentralW = profile.voronoiCentralW;
 
     const huntStart = profile.huntStartTick;
     const urgency =
@@ -3561,6 +3581,7 @@ export class BotController {
             ry,
             foeTilesNow,
             this.curVoronoiFoeLambda,
+            this.curVoronoiCentralW,
           );
       }
       // Re-argmax over the biased scores (fixed order, strict >, first wins) so

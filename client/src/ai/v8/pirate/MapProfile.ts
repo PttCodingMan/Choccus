@@ -100,4 +100,5 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   voronoiWeight: 3,
   voronoiFoeLambda: 0,
   voronoiShrinkOff: true,
+  voronoiCentralW: 0,
 });

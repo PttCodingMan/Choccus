@@ -339,4 +339,13 @@ export interface MapProfile {
    * `voronoiWeight` is 0.
    */
   readonly voronoiShrinkOff: boolean;
+  /**
+   * VORONOI CENTRALITY weight (0 = uniform tile weight, byte-identical to the
+   * proven λ-only diff). When > 0, each owned safe tile in the Voronoi differential
+   * is weighted by its centrality (central tiles worth more, tapering to 0 at
+   * VORONOI_CENTRAL_SPAN hops), so the squeeze prefers commanding the late-hardening
+   * CENTRE and pushing the foe outward (report §3.2 chamber / §3.7 P2 centrality —
+   * "自己居中、對手居外，讓縮圈替你殺"). Tuned by direct CRN vs the v7 pool.
+   */
+  readonly voronoiCentralW: number;
 }

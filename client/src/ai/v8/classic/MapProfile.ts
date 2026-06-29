@@ -161,4 +161,5 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // λ=0 → PURE DEFENSE (my own safe space only); full λ cost the farmer matchup.
   voronoiFoeLambda: 0,
   voronoiShrinkOff: false,
+  voronoiCentralW: 15,
 });
