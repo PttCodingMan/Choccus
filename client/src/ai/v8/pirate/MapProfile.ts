@@ -97,6 +97,7 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   shrinkEntrapWeight: 0,
   // VORONOI TERRITORY squeeze (report §3.2). 0 = off (byte-identical to the frozen
   // yardstick zoner); tuned by direct CRN vs the v7 pool. See MapProfile.ts.
-  voronoiWeight: 0,
+  voronoiWeight: 3,
   voronoiFoeLambda: 0,
+  voronoiShrinkOff: true,
 });

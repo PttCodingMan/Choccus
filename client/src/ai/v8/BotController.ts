@@ -620,6 +620,12 @@ export class BotController {
    * only), 100 = full differential (also compress the foe). */
   private curVoronoiFoeLambda = 100;
 
+  /** Effective VORONOI shrink-off flag (`MapProfile.voronoiShrinkOff`). When true,
+   * the territory term is suppressed once the sudden-death shrink is live — on the
+   * open pirate map the mid-game squeeze helps but the symmetric SHRINK endgame is
+   * a coin-flip the term only destabilises. classic/village false. */
+  private curVoronoiShrinkOff = false;
+
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
   private lastFoeTile = -1;
@@ -2929,6 +2935,7 @@ export class BotController {
     this.curCorridorGate = profile.corridorGate;
     this.curVoronoiWeight = profile.voronoiWeight;
     this.curVoronoiFoeLambda = profile.voronoiFoeLambda;
+    this.curVoronoiShrinkOff = profile.voronoiShrinkOff;
 
     const huntStart = profile.huntStartTick;
     const urgency =
@@ -3528,10 +3535,16 @@ export class BotController {
     // (foeDist < cap). While isolated (walled off, foeDist == cap) there is no foe
     // to squeeze or be squeezed by, so the term is both meaningless and the costly
     // multi-source BFS is skipped through the whole isolated farming phase.
+    // pureHunt (the aggressive Hunter) is EXCLUDED: territory-holding conflicts
+    // with its deliberately-tuned dive-in aggression, and excluding it keeps the
+    // Hunter / difficulty presets / self-trap guards byte-identical — the squeeze
+    // is the control-style Zoner's lever (the live champion).
     if (
       this.curVoronoiWeight > 0 &&
+      !this.tuning.pureHunt &&
       foeTilesNow.size > 0 &&
-      foeDist < ISOLATED_FOE_DIST
+      foeDist < ISOLATED_FOE_DIST &&
+      !(this.curVoronoiShrinkOff && state.tick >= SUDDEN_DEATH_START_TICK)
     ) {
       for (let a = RootAction.STAY as number; a <= RootAction.PLACE_BOMB; a++) {
         if (perAction[a] === Number.NEGATIVE_INFINITY) continue;

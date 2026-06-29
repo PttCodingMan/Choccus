@@ -329,4 +329,14 @@ export interface MapProfile {
    * `voronoiWeight` is 0.
    */
   readonly voronoiFoeLambda: number;
+  /**
+   * VORONOI shrink-off: when true, the territory term is suppressed once the
+   * sudden-death shrink is live (tick ≥ SUDDEN_DEATH_START_TICK). On the OPEN
+   * pirate map the mid-game territory squeeze helps vs a fleer but the symmetric
+   * SHRINK endgame is a near coin-flip the term only destabilises (mirror h2h sits
+   * ~46% whenever it is on through the shrink); turning it off there keeps the
+   * mid-game gain without the endgame cost. CLASSIC/VILLAGE false. Inert when
+   * `voronoiWeight` is 0.
+   */
+  readonly voronoiShrinkOff: boolean;
 }
