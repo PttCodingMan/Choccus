@@ -87,7 +87,7 @@ import {
   forwardSearch,
 } from './core/forwardSearch';
 import type { MapProfile } from './MapProfile';
-import { CLASSIC_PROFILE } from './classic/MapProfile';
+import { CLASSIC_PROFILE, VILLAGE_PROFILE } from './classic/MapProfile';
 import { PIRATE_PROFILE } from './pirate/MapProfile';
 
 // Live bot = current AI_VERSION (see version.ts)
@@ -719,7 +719,8 @@ export class BotController {
   private profileFor(state: SimState): MapProfile {
     if (this.profileOverride !== null) return this.profileOverride;
     if (state.mapKind === 'pirate') return PIRATE_PROFILE;
-    return CLASSIC_PROFILE; // 'classic' and 'village' (see note above)
+    if (state.mapKind === 'village') return VILLAGE_PROFILE; // classic-derived, centralW 0
+    return CLASSIC_PROFILE;
   }
 
   /** Bot-private uniform float in [0, 1); threads the RNG state forward. */
