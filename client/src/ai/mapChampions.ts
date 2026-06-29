@@ -10,8 +10,14 @@ import type { MapKind } from '../sim/Map';
  *    2. 「縮圈開始之後，佔據中心」 — once the shrink is live, hard-prioritise holding
  *       the late-hardening centre (per-map shrinkCenterPriorityWeight: classic +
  *       village 20, pirate 0).
- *  On the frozen v7 BT yardstick, v8:zoner is byte-identical to the #1 v7:zoner and
- *  so ranks #1 on all three maps.
+ *  PLUS (2026-06-29) the dypm-report VORONOI TERRITORY SQUEEZE (docs/ai-versions.md
+ *  §十五): a multi-source-BFS reachable-tile differential added as a root-level
+ *  potential (zoner-only `voronoi` flag; per-map voronoiWeight/Lambda/ShrinkOff).
+ *  It models attack as structural squeeze (not phantom-kill) and counters the
+ *  squeeze-death the per-second v5-diag exposed. On the frozen v7 BT yardstick this
+ *  lifts v8:zoner from a tie to STRICT #1: classic 1690 (+24 over v7:zoner, the
+ *  prior top), village 1669 (+8); pirate (open coin-flip) a small net-positive lean
+ *  at the documented symmetric ceiling. v8:zoner is #1 on all three maps.
  *
  *  Why ZONER is the live default (per the user's call, 2026-06-28): the two rules
  *  are a develop-and-control doctrine that only the Zoner can actually honour — it

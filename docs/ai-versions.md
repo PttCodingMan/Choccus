@@ -726,3 +726,72 @@ sealer 為正 → 無可 gate 的好東西**。未來若找到「對真封殺者
 - **別再跑** pocketAvoid／seal-scenario／sealPredict-on-zoner／靜態 corridorGate-on-pirate／純進攻 lead-bomb——本節已證實全否決。
 - **要動 AI 前先重量**：歷史逐旋鈕勝率過期，先用 `v5-screen` 對現 v7 池重測 baseline，再談。
 - **自適應 gating（#13 的 detector）保留為工具概念**：找到正 lever 時可用。
+
+## 十五、v8 Voronoi 領域擠壓（dypm 報告 H3/P2/P4）— 破 §十四 的「調參到頂」（2026-06-29）
+
+> 一句話：**§十四 用一組防守／幻影擊殺 lever 試到頂、判「純調參無法嚴格超越 v7:zoner」；
+> 但那組 lever 沒試報告的核心軸——把攻擊建模成「結構性 Voronoi 領域擠壓」。補上這條，
+> classic 直接 +24 嚴格超越量尺頂、village +8，雙圖嚴格 #1。** 這是 v8 的 in-place 強化（v7 量尺不動）。
+
+### 由來：報告給的、§十四 沒試的軸
+使用者交付 `bomberman_dypm_策略對應報告.md`（Pommerman/dypm 策略映射）＋升級過的**逐秒**死前回朔
+`v5-diag`（`TRACE_SECONDS = [0..10]`，每秒一欄）。報告核心：**攻擊 = 結構性壓縮對手可達安全格集合
+（squeeze ≡ Tron Voronoi 先到格數差），不是賭對手走進炸彈（phantom kill）**。§十四 跑過的 9 條 lever
+（pocketAvoid／seal-scenario／sealPredict／corridorGate／lead-bomb）全是「防幻影擊殺」或「投影對手」——
+**沒有一條是 Voronoi 領域差**（報告 P-high #1 / H3 / P2 / P4）。故 §十四 的「到頂」只證明「那組 lever 到頂」。
+
+### 診斷（逐秒 v5-diag，classic mirror）：死因＝結構性擠壓
+v8:zoner vs v8:zoner（48.8%）敗局逐秒：死前 8 秒對手逼近到 ~5 格、放封口彈，**自由空間 16.9→4.8、
+逃生分支 2.0→0.5（~6–8 秒內崩成死胡同）**，然後對手退回 7.7 格、靠牆＋彈把困在 pocket 的 bot 磨死。
+勝局逃生分支收在 2.37、敗局 0.4。**正是報告 §1/§3.2 的「從遠處擠壓對手可達空間」，非 phantom-kill 俯衝。**
+關鍵：崩潰 6–8 秒前就開始，**遠在 depth-4 前瞻（~3 秒）視野之外** → 需要一個全域訊號。
+
+### 機制：多源 BFS Voronoi 領域差（root-level 勢能）
+`BotController.voronoiDiff`：Tron 式多源 BFS，從**我方結果格**與**每個敵格**同時 flood，每個 open 格歸給
+先到的一方（等距＝平手），回傳「我先到的安全格數 − 對手先到的安全格數」。在 `sample()` forwardSearch
+之後，對每個合法 root action 的結果格加 `voronoiWeight × voronoiDiff`、重算 argmax。每決策 tick 重評＝
+導航勢能（如 growth pull），不需深度。**安全閘不動**（bounded ≪ W_SURVIVE flood，只重排同等存活的格）。
+純整數 FIFO BFS、固定 DIRECTION_ORDER、等距→平手與 seeding 無關 → 決定性（CRN 紅線 240 test 綠）。
+
+旋鈕（皆 per-map，0＝逐位元＝前一版 v8；外加 archetype `voronoi` 旗）：
+- **`voronoiWeight`**：強度。classic/village 3、pirate 3。
+- **`voronoiFoeLambda`（報告 P4 的 λ，S_self − λ·S_opp）**：λ=0＝**純防守**（只最大化自己未爭安全空間→往
+  開闊漂、遠離 passive farmer 彈場）；λ=100＝**全差分**（也壓縮對手）。**classic 實測：λ=100 把 farmer 對局
+  打掉 ~25%（逼近＝走進 farmer 彈場）；λ=0 修好（farmer −25→+12.5）。** 三圖皆 λ=0。
+- **`voronoiShrinkOff`**：pirate true——縮圈後關掉（開放圖對稱殘局是 coin-flip，term 只會擾動；mirror h2h
+  在 term 整局開時卡 ~46%，縮圈關掉後回到 ~中性）。classic/village false。
+- **連通閘**：只在 `foeDist < ISOLATED_FOE_DIST`（有開放路徑到敵）才開——孤立發育期無敵可擠（且省昂貴 BFS）。
+- **archetype `voronoi` 旗（zoner-only）**：難度檔（easy/normal/hard 非 pureHunt）與 Hunter **不帶旗 → 逐位元
+  不變**，玩家難度路徑與自陷護欄不受影響。擠壓是**控場 Zoner** 的 lever。
+
+### 結果（`bt-rank` vs 凍結 v7 池，80 reps）
+| 圖 | v8:zoner BT | 名次 | vs v7:zoner（量尺頂）| 關鍵殘差 / h2h |
+| --- | --- | --- | --- | --- |
+| **classic** | **1690** | **#1** | **+24** | runner +5（h2h 73%）farmer +1 zoner h2h 56% |
+| **village** | **1669** | **#1** | **+8** | runner +5（h2h 65%）zoner +3（h2h 54%）|
+| **pirate** | ~量尺頂並列 | 邊際 #1 | ~0（小幅正向 lean）| 開放對稱天花板；shrink-off 後 farmer/runner/trapper +2、mirror 中性 |
+
+報告 H9 預測命中：最大增益來自**壓 passive fleer（runner 73%/65%）**＋**mirror 翻過 50%**（嚴格超越量尺頂）。
+classic 決定性、village 穩 #1。weight 5 把 classic 推到 +31 但 village 掉到 +1（farmer 退）→ 共用 profile 取
+weight 3（雙圖皆清楚 #1）；不為 village 邊際拆 profile。
+
+### pirate＝開放圖對稱天花板（誠實結論）
+pirate 是近 coin-flip（池內 6 隻擠在 1461–1519）。各 voronoi 配置（weight 0/1/3、λ 0/100）下 v8:zoner 都在
+量尺頂附近 ±noise；term 整局開時 mirror h2h 卡 ~46%（縮圈擾動）。**voronoiShrinkOff（縮圈後關）** 把 mirror
+拉回中性、保住 mid-game 的 runner/farmer/trapper 小幅正向（+2，INCONCLUSIVE）→ 邊際 #1，但非「顯著」。
+與 §十／§十四 一致：**開放對稱圖的天花板需機制非對稱（§十 path A）或殘局 tempo/parity（報告 §3.5）／割點精算
+（H4）才可能破**，純位置 lever 在 pirate 必 wash。這些 endgame 軸為未來工作。
+
+### 回歸驗證
+- `npm run lint`（含 ai/** 決定性護欄）✅、`npm run test:ci`（240 pass，含 CRN parallel==serial 紅線）✅、
+  `tsc --noEmit` ✅。自陷護欄（ai-selfkill／ai-chaosv／ai-live-selftrap，後二含 zoner+voronoi）**10/10 過** ✅
+  ——**zoner+voronoi 自陷率 0.0187（1.87%，<6%，與無 voronoi 同）**＝安全閘確實只重排不送頭；live 聚合 easy+
+  normal+hard <5%、easy/normal/hard self-trap <12/8/8%、皆決定性。
+- live bot 成本：決策由 commitment 節流（~每 3–5 tick 一決策）→ 60Hz 預算內 trivial；只有 headless bench
+  （百萬 tick 連跑、無 frame 預算）才顯慢——故 bench 用較少 reps + mc 平行，live 不受影響。
+
+### 如何用 / 重跑
+- 量尺定位：`npm run bt-rank -- --target=v8:zoner --map=<m> --no-write`（對 v7 池；classic/village 嚴格 #1）。
+- 快篩新 weight/λ：`npm run v5-screen`（paired CRN，先 `--save-baseline` 存現役、翻旋鈕再跑）。
+- 死因診斷：`npm run v5-diag -- --target=v8:zoner --opponent=v7:<arch> --map=<m>`（逐秒崩潰軌跡）。
+- caps 若再動 → 須重 `bt-seed` 三圖（v7 量尺不變則免）。
