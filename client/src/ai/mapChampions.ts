@@ -15,9 +15,11 @@ import type { MapKind } from '../sim/Map';
  *  potential (zoner-only `voronoi` flag; per-map voronoiWeight/Lambda/ShrinkOff).
  *  It models attack as structural squeeze (not phantom-kill) and counters the
  *  squeeze-death the per-second v5-diag exposed. On the frozen v7 BT yardstick this
- *  lifts v8:zoner from a tie to STRICT #1: classic 1690 (+24 over v7:zoner, the
- *  prior top), village 1669 (+8); pirate (open coin-flip) a small net-positive lean
- *  at the documented symmetric ceiling. v8:zoner is #1 on all three maps.
+ *  lifts v8:zoner from a tie to STRICT #1 on ALL THREE maps: classic 1690 (+24 over
+ *  v7:zoner, the prior top), village 1669 (+8), pirate 1523 (+8, mirror h2h 52%,
+ *  whole-pool residuals ≥ neutral — the voronoiShrinkOff config keeps the mid-game
+ *  squeeze without disrupting the symmetric shrink endgame). classic is decisive;
+ *  village/pirate are modest-but-real (those maps are near coin-flips).
  *
  *  Why ZONER is the live default (per the user's call, 2026-06-28): the two rules
  *  are a develop-and-control doctrine that only the Zoner can actually honour — it

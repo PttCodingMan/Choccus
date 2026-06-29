@@ -769,18 +769,20 @@ v8:zoner vs v8:zoner（48.8%）敗局逐秒：死前 8 秒對手逼近到 ~5 格
 | --- | --- | --- | --- | --- |
 | **classic** | **1690** | **#1** | **+24** | runner +5（h2h 73%）farmer +1 zoner h2h 56% |
 | **village** | **1669** | **#1** | **+8** | runner +5（h2h 65%）zoner +3（h2h 54%）|
-| **pirate** | ~量尺頂並列 | 邊際 #1 | ~0（小幅正向 lean）| 開放對稱天花板；shrink-off 後 farmer/runner/trapper +2、mirror 中性 |
+| **pirate** | **1523** | **#1** | **+8** | 全池殘差皆正/中性：farmer/runner/trapper/reactive +1、**mirror +0（h2h 52%）**、hunter −4 |
 
 報告 H9 預測命中：最大增益來自**壓 passive fleer（runner 73%/65%）**＋**mirror 翻過 50%**（嚴格超越量尺頂）。
 classic 決定性、village 穩 #1。weight 5 把 classic 推到 +31 但 village 掉到 +1（farmer 退）→ 共用 profile 取
 weight 3（雙圖皆清楚 #1）；不為 village 邊際拆 profile。
 
-### pirate＝開放圖對稱天花板（誠實結論）
-pirate 是近 coin-flip（池內 6 隻擠在 1461–1519）。各 voronoi 配置（weight 0/1/3、λ 0/100）下 v8:zoner 都在
-量尺頂附近 ±noise；term 整局開時 mirror h2h 卡 ~46%（縮圈擾動）。**voronoiShrinkOff（縮圈後關）** 把 mirror
-拉回中性、保住 mid-game 的 runner/farmer/trapper 小幅正向（+2，INCONCLUSIVE）→ 邊際 #1，但非「顯著」。
-與 §十／§十四 一致：**開放對稱圖的天花板需機制非對稱（§十 path A）或殘局 tempo/parity（報告 §3.5）／割點精算
-（H4）才可能破**，純位置 lever 在 pirate 必 wash。這些 endgame 軸為未來工作。
+### pirate＝開放圖近 coin-flip，但 shrink-off 拿到乾淨小幅 #1
+pirate 池極扁（6 隻擠在 ~1460–1523）。**關鍵在 `voronoiShrinkOff`**：term 整局開時 40-rep 看似 mirror −4
+（縮圈擾動對稱殘局），但**縮圈後關掉**＋80-rep 量到的是 **v8:zoner 1523 #1、+8 over v7:zoner、mirror h2h 52%、
+全池殘差皆正/中性**（farmer/runner/trapper/reactive +1、mirror +0、僅 hunter −4）。即 mid-game 的領域擠壓在
+開放圖也有小幅淨利，只要不去擾動對稱的縮圈殘局。**三圖皆嚴格 #1**（classic 決定性 +24、village/pirate 各 +8）。
+> 為何 pirate 增益小：開放對稱圖的 mirror 本質近 coin-flip，**任何雙方都用的確定性 lever 在對稱殘局都趨 ~50%**
+> （報告 §3.4）。要把 pirate 也推到 classic 那種「決定性」優勢，只剩**機制非對稱**（§十 path A，產品決策）；純
+> 位置/殘局 bot-tuning 到此為止。殘局 tempo/parity（§3.5）／割點精算（H4）同理會在對稱 mirror wash，列為參考。
 
 ### 回歸驗證
 - `npm run lint`（含 ai/** 決定性護欄）✅、`npm run test:ci`（240 pass，含 CRN parallel==serial 紅線）✅、
