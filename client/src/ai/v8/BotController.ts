@@ -3535,13 +3535,14 @@ export class BotController {
     // (foeDist < cap). While isolated (walled off, foeDist == cap) there is no foe
     // to squeeze or be squeezed by, so the term is both meaningless and the costly
     // multi-source BFS is skipped through the whole isolated farming phase.
-    // pureHunt (the aggressive Hunter) is EXCLUDED: territory-holding conflicts
-    // with its deliberately-tuned dive-in aggression, and excluding it keeps the
-    // Hunter / difficulty presets / self-trap guards byte-identical — the squeeze
-    // is the control-style Zoner's lever (the live champion).
+    // EXPLICIT OPT-IN (this.tuning.voronoi): only the control-style Zoner archetype
+    // (the live champion) carries the flag. The aggressive Hunter AND the difficulty
+    // presets (easy/normal/hard — NOT pureHunt-flagged, so a !pureHunt gate would
+    // wrongly include them) stay byte-identical, keeping the player-facing difficulty
+    // path and the self-trap guards unchanged. Territory-holding is the Zoner's lever.
     if (
+      this.tuning.voronoi === true &&
       this.curVoronoiWeight > 0 &&
-      !this.tuning.pureHunt &&
       foeTilesNow.size > 0 &&
       foeDist < ISOLATED_FOE_DIST &&
       !(this.curVoronoiShrinkOff && state.tick >= SUDDEN_DEATH_START_TICK)

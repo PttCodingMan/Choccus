@@ -56,6 +56,10 @@ export interface BotTuning {
   // uses the threaded bot RNG).
   /** 獵殺流 Hunter：永遠朝對手逼近、不農田不撿道具、放寬保命換 tempo（接受高風險）。 */
   pureHunt?: boolean;
+  /** 控場流 Zoner 才開：啟用 Voronoi 領域擠壓（多源 BFS 安全格差的 root-level 勢能，
+   *  per-map `voronoiWeight`/`voronoiFoeLambda`/`voronoiShrinkOff`）。其餘 archetype 與
+   *  難度檔（difficulty presets）不帶此旗 → 逐位元不變（自陷護欄不受影響）。 */
+  voronoi?: boolean;
   /** 逃跑流 Runner：永遠走離對手最遠的安全格、幾乎不放彈（純存活，靠耗死魯莽方）。 */
   fleeFoe?: boolean;
   /** 控場流 Zoner：與對手保持這個距離的「環」，從環上用炸彈壓縮對手空間、佔中心、把對手往角落趕，不近身（0/undefined = 關閉）。 */
