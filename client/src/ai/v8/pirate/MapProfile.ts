@@ -95,4 +95,8 @@ export const PIRATE_PROFILE: MapProfile = Object.freeze({
   // zoner versions (v4≈v5≈v6); the escape-branch defense doesn't break the symmetric
   // shrink squeeze either. Keep pirate byte-identical to v5.
   shrinkEntrapWeight: 0,
+  // VORONOI TERRITORY squeeze (report §3.2). 0 = off (byte-identical to the frozen
+  // yardstick zoner); tuned by direct CRN vs the v7 pool. See MapProfile.ts.
+  voronoiWeight: 0,
+  voronoiFoeLambda: 0,
 });

@@ -155,4 +155,9 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // independent), targeting the ~20/38 mirror losses to the shrink squeeze that v5's
   // foe-triggered entrap can't reach. classic ON; see MapProfile.ts.
   shrinkEntrapWeight: 30,
+  // VORONOI TERRITORY squeeze (report §3.2). 0 = off (byte-identical to the frozen
+  // yardstick zoner); tuned by direct CRN vs the v7 pool. See MapProfile.ts.
+  voronoiWeight: 3,
+  // λ=0 → PURE DEFENSE (my own safe space only); full λ cost the farmer matchup.
+  voronoiFoeLambda: 0,
 });
