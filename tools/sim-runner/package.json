@@ -23,6 +23,7 @@
     "meta-rank": "tsx src/meta-rank.ts",
     "v5-screen": "tsx src/v5-screen.ts",
     "v5-probe": "tsx src/v5-probe.ts",
+    "adapt-probe": "tsx src/adapt-probe.ts",
     "v5-diag": "tsx src/v5-diag.ts",
     "v5-trace": "tsx src/v5-trace.ts"
   },

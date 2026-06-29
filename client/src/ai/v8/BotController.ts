@@ -452,6 +452,39 @@ const SEAL_FREE_CANNONS_MIN = 3; // only a REAL chainer (>=3 spare bombs) — fi
  * bounded; only runs while a foe is within combat range). */
 const ENTRAP_FLOOD_CAP = 12;
 
+// ---------------------------------------------------------------------------
+// v8 ADAPTIVE COUNTER (opponent-aggression detector → continuous entrap knob).
+//
+// Humans raise their win rate by READING the opponent and switching to a counter
+// style; this is the deterministic, single-loop equivalent. A decaying-heat +
+// hysteresis-latch detector classifies the nearest foe's RECENT behaviour as
+// "sealer-like" (the v3/v7:trapper win condition and the player-reported death:
+// holds spare cannons to chain a vChain / advances into the seal-setup band /
+// drops bombs in range) and RAISES curEntrapWeight in proportion — more escape
+// redundancy exactly against a foe trying to wall us in, while staying at the
+// per-map baseline against a passive foe (no tempo cost). It is NOT a discrete
+// mode switch: the knob feeds the SAME weighted score (dypm dogma), and it is
+// adaptive-GATED like the §14 #13 detector so a passive mirror never pays the
+// avoidance cost. Pure integer / threaded state / no banned globals.
+//
+// ADAPT_COUNTER is the experimental flag. OFF (committed default) ⇒ the detector
+// never runs and curEntrapWeight is untouched ⇒ BYTE-IDENTICAL to the live
+// champion (v8:zoner). Flip ON locally for the v5-screen candidate run.
+// ---------------------------------------------------------------------------
+const ADAPT_COUNTER = false;
+/** Heat ceiling = full-aggression detection. */
+const ADAPT_HEAT_MAX = 100;
+/** >=2 evidence bits this decision tick → latch up fast (saturates in ~3 ticks). */
+const ADAPT_HEAT_STRONG = 34;
+/** Exactly 1 evidence bit → drift up (ambiguous signal). */
+const ADAPT_HEAT_WEAK = 12;
+/** No evidence → cool slowly (hysteresis: a lone calm tick does not clear a latch). */
+const ADAPT_HEAT_DECAY = 3;
+/** Max entrapWeight ADDED at full heat (≈ the classic baseline of 20, so a fully
+ *  latched sealer roughly doubles classic's dead-end aversion and turns it on at
+ *  all on pirate, whose baseline is 0). */
+const ADAPT_ENTRAP_MAX = 20;
+
 /** A scored candidate action. */
 interface Candidate {
   /** Direction bit for a move, Direction.NONE for STAY / PLACE_BOMB. */
@@ -581,6 +614,15 @@ export class BotController {
   private lastFoeTile = -1;
   private lastFoeBombs = 0;
 
+  /** v8 ADAPTIVE COUNTER (only mutated while ADAPT_COUNTER is on, so the flag-off
+   * path stays byte-identical to the champion): decaying foe-aggression heat
+   * (0..ADAPT_HEAT_MAX). Latches up on sealer-like foe behaviour, cools on calm. */
+  private foeAggrHeat = 0;
+  /** Nearest-foe BFS distance seen last decision tick (advance detection); 40 = none. */
+  private lastAdaptFoeDist = 40;
+  /** Total live enemy-bomb count seen last decision tick (fresh-bomb detection). */
+  private lastAdaptFoeBombs = 0;
+
   /**
    * Post-bomb escape commitment. After dropping a bomb we lock onto the safe
    * tile we just validated and walk straight there, dropping no new bomb until
@@ -613,16 +655,29 @@ export class BotController {
    */
   private readonly profileOverride: MapProfile | null;
 
+  /**
+   * v8 ADAPTIVE COUNTER per-instance override. When true, the opponent-counter
+   * detector runs for THIS bot regardless of the global ADAPT_COUNTER flag (which
+   * stays the committed OFF for the champion + the v5-screen workflow). It exists
+   * so an in-process harness (adapt-probe.ts) can pit an adaptive-ON and an
+   * adaptive-OFF v8 against the SAME opponent under identical CRN seeds, for a
+   * clean paired delta — without re-running the process with the flag flipped.
+   * Default false ⇒ the normal factory path is byte-identical to the champion.
+   */
+  private readonly adaptive: boolean;
+
   constructor(
     rngSeed: number,
     tuning: BotTuning,
     slot: number,
     profileOverride: MapProfile | null = null,
+    adaptive = false,
   ) {
     this.rng = rngSeed >>> 0;
     this.tuning = tuning;
     this.ctorSlot = slot;
     this.profileOverride = profileOverride;
+    this.adaptive = adaptive;
   }
 
   /**
@@ -1868,6 +1923,41 @@ export class BotController {
   }
 
   /**
+   * v8 ADAPTIVE COUNTER detector → integer foe-aggression level 0..ADAPT_HEAT_MAX
+   * with decaying-heat hysteresis (a single tick neither latches nor clears it).
+   * Three integer evidence bits, all signs of a foe SETTING UP a seal — the death
+   * the player reported and the v3/v7:trapper win condition:
+   *   E1 foe holds >= SEAL_FREE_CANNONS_MIN spare bombs (can chain a vChain seal);
+   *   E2 foe is ADVANCING (foeDist fell vs last tick) and inside the seal-setup
+   *      band (foeDist <= SEAL_PREDICT_RANGE);
+   *   E3 a fresh enemy bomb appeared while the foe is inside that band.
+   * Strong (>=2 bits) latches the heat up fast; one bit drifts it up; none cools
+   * it slowly. Mutates the heat + last-seen state, so it is ONLY called while
+   * ADAPT_COUNTER is on (keeping the flag-off path byte-identical to the champion).
+   * Pure / deterministic: integer math, threaded fields, no banned globals.
+   */
+  private updateFoeAggression(
+    foeDist: number,
+    foeFreeCannons: number,
+    liveFoeBombs: number,
+  ): number {
+    let evidence = 0;
+    if (foeFreeCannons >= SEAL_FREE_CANNONS_MIN) evidence += 1;
+    if (foeDist <= SEAL_PREDICT_RANGE && foeDist < this.lastAdaptFoeDist) evidence += 1;
+    if (foeDist <= SEAL_PREDICT_RANGE && liveFoeBombs > this.lastAdaptFoeBombs) evidence += 1;
+    if (evidence >= 2) {
+      this.foeAggrHeat = Math.min(ADAPT_HEAT_MAX, this.foeAggrHeat + ADAPT_HEAT_STRONG);
+    } else if (evidence === 1) {
+      this.foeAggrHeat = Math.min(ADAPT_HEAT_MAX, this.foeAggrHeat + ADAPT_HEAT_WEAK);
+    } else {
+      this.foeAggrHeat = Math.max(0, this.foeAggrHeat - ADAPT_HEAT_DECAY);
+    }
+    this.lastAdaptFoeDist = foeDist;
+    this.lastAdaptFoeBombs = liveFoeBombs;
+    return this.foeAggrHeat;
+  }
+
+  /**
    * PESSIMISTIC PLACE_BOMB gate (v2). Builds the danger map with OUR hypothetical
    * bomb PLUS the nearest live enemies' hypothetical bombs (same cap/selection as
    * buildScenarios — up to MAX_SCENARIO_ENEMIES nearest within foeReachTiles BFS
@@ -2867,6 +2957,31 @@ export class BotController {
         }
       }
     }
+    // v8 ADAPTIVE COUNTER (flag-gated; OFF ⇒ this whole block is skipped and
+    // curEntrapWeight is the per-map baseline ⇒ byte-identical to the champion).
+    // Read the nearest foe's recent behaviour; the more sealer-like it is, the more
+    // we RAISE the anti-entrapment weight, so the bot keeps escape redundancy
+    // exactly against a foe trying to wall it in — and stays at baseline (heat 0)
+    // vs a passive foe. The heat is always updated (cools when no foe / calm) so a
+    // brief contact does not leave it stuck on.
+    if (ADAPT_COUNTER || this.adaptive) {
+      let liveFoeBombs = 0;
+      for (const b of state.bombs) {
+        for (const p of state.players) {
+          if (p.slot === b.ownerSlot) {
+            if (p.team !== myTeam) liveFoeBombs += 1;
+            break;
+          }
+        }
+      }
+      const foeAggr = this.updateFoeAggression(
+        foeDist,
+        this.curFoeFreeCannons,
+        liveFoeBombs,
+      );
+      this.curEntrapWeight += Math.floor((ADAPT_ENTRAP_MAX * foeAggr) / 100);
+    }
+
     const protectLead =
       profile.protectLead &&
       foeDist < PROTECT_LEAD_DIST &&

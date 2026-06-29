@@ -34,7 +34,14 @@ import { arg, parseChallenger } from './bt-common';
 
 const STEP_DANGER_HORIZON = SPARK_TICKS + 4;
 const SURV_SAFE_HORIZON = FUSE_TICKS;
-const WINDOW = 600; // 10 s @ 60 Hz — the "signs ten seconds earlier" window.
+const WINDOW = 600; // 10 s @ 60 Hz — the WIN-game "last 10 s mean" baseline window.
+/** Seconds-before-death to snapshot the target's trajectory at: per-second through
+ *  the 0–10 s window, which is where the seal collapses escape branches (the coarse
+ *  1 s/10 s endpoints couldn't locate WHEN). The sparse 12–20 s tail was dropped —
+ *  it carried no signal (branches stable, devGap flat that far out). */
+const TRACE_SECONDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/** Per-tick trajectory ring cap: must cover the furthest TRACE_SECONDS offset. */
+const RING_CAP = (Math.max(...TRACE_SECONDS) + 2) * 60; // 22 s of history.
 const FLOOD_CAP = 12;
 const FREE_CAP = 24;
 
@@ -126,8 +133,8 @@ interface Loss {
   deathTick: number;
   cause: 'SEALED' | 'OPEN' | 'TRAPPED';
   atDeath: Sample;
-  at1s: Sample | null;
-  at10s: Sample | null;
+  /** Trajectory snapshots, parallel to TRACE_SECONDS (null = before game start). */
+  trace: (Sample | null)[];
 }
 
 function devSum(p: { fire: number; cannon: number }): number {
@@ -210,7 +217,7 @@ async function main(): Promise<void> {
               devGap: devSum(me) - devSum(foe),
               enemyBombsNear,
             });
-            if (ring.length > WINDOW) ring.shift();
+            if (ring.length > RING_CAP) ring.shift();
           }
           if (me.trapped) wasTrappedRecently = true;
           state = tick(state, frame);
@@ -242,8 +249,7 @@ async function main(): Promise<void> {
               deathTick: targetDeathTick,
               cause,
               atDeath,
-              at1s: sampleAt(ring, targetDeathTick - 60),
-              at10s: sampleAt(ring, targetDeathTick - WINDOW),
+              trace: TRACE_SECONDS.map((s) => sampleAt(ring, targetDeathTick - s * 60)),
             });
           }
         } else if (!targetAlive && !oppAlive) {
@@ -309,34 +315,28 @@ function report(
     console.log(
       `  DEATH PHASE: pre-hunt(<20s) ${preHunt}  mid ${mid}  shrink(>=120s) ${shrink}`,
     );
-    const atDeath = lossRecords.map((l) => l.atDeath);
-    const at1s = lossRecords.map((l) => l.at1s).filter((s): s is Sample => s !== null);
-    const at10s = lossRecords.map((l) => l.at10s).filter((s): s is Sample => s !== null);
-    console.log('  TARGET trajectory before a LOSS (mean):');
+    // Dense per-second trajectory: each column is a TRACE_SECONDS offset (0 =
+    // death), so the seal's onset is visible as the column where branches/free
+    // collapse — and a slower strategic drift shows as a gentle slope further out.
+    console.log('  TARGET trajectory before a LOSS (mean; columns = seconds before death):');
+    console.log('    sec→death' + TRACE_SECONDS.map((s) => String(s).padStart(6)).join(''));
+    const row = (label: string, f: (s: Sample) => number): void => {
+      const cells = TRACE_SECONDS.map((_, i) => {
+        const vals = lossRecords
+          .map((l) => l.trace[i])
+          .filter((s): s is Sample => s != null)
+          .map(f);
+        return (vals.length === 0 ? '-' : mean(vals).toFixed(1)).padStart(6);
+      });
+      console.log(`    ${label.padEnd(9)}` + cells.join(''));
+    };
+    row('branches', (s) => s.branches);
+    row('freeSpace', (s) => s.free);
+    row('foeDist', (s) => s.foeMan);
+    row('devGap', (s) => s.devGap);
+    row('enemyBmb', (s) => s.enemyBombsNear);
     console.log(
-      `    branches:  death ${mean(atDeath.map((s) => s.branches)).toFixed(2)}` +
-        `   1s-before ${mean(at1s.map((s) => s.branches)).toFixed(2)}` +
-        `   10s-before ${mean(at10s.map((s) => s.branches)).toFixed(2)}` +
-        `   (WIN-game mean ${mean(winBranches).toFixed(2)})`,
-    );
-    console.log(
-      `    foeDist:   death ${mean(atDeath.map((s) => s.foeMan)).toFixed(2)}` +
-        `   1s-before ${mean(at1s.map((s) => s.foeMan)).toFixed(2)}` +
-        `   10s-before ${mean(at10s.map((s) => s.foeMan)).toFixed(2)}` +
-        `   (WIN-game mean ${mean(winFoeMan).toFixed(2)})`,
-    );
-    console.log(
-      `    freeSpace: death ${mean(atDeath.map((s) => s.free)).toFixed(2)}` +
-        `   1s-before ${mean(at1s.map((s) => s.free)).toFixed(2)}` +
-        `   10s-before ${mean(at10s.map((s) => s.free)).toFixed(2)}`,
-    );
-    console.log(
-      `    devGap:    death ${mean(atDeath.map((s) => s.devGap)).toFixed(2)}` +
-        `   10s-before ${mean(at10s.map((s) => s.devGap)).toFixed(2)}`,
-    );
-    console.log(
-      `    enemyBombsNear: death ${mean(atDeath.map((s) => s.enemyBombsNear)).toFixed(2)}` +
-        `   1s-before ${mean(at1s.map((s) => s.enemyBombsNear)).toFixed(2)}`,
+      `    (WIN-game last-10s mean: branches ${mean(winBranches).toFixed(2)}  foeDist ${mean(winFoeMan).toFixed(2)})`,
     );
   }
 }
