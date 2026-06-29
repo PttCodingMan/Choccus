@@ -166,7 +166,7 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // trapper 51%→59% — the documented weak residual fixed), even though v5-screen
   // flagged the runner regression — strength-weighted BT rose because trapper is a
   // strong pool member. VILLAGE regresses with it (own profile below holds 0).
-  voronoiCentralW: 15,
+  voronoiCentralW: 30,
 });
 
 /** VILLAGE reuses the CLASSIC profile EXCEPT the Voronoi centrality weight:
