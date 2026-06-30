@@ -15,11 +15,13 @@ import type { MapKind } from '../sim/Map';
  *  potential (zoner-only `voronoi` flag; per-map voronoiWeight/Lambda/ShrinkOff).
  *  It models attack as structural squeeze (not phantom-kill) and counters the
  *  squeeze-death the per-second v5-diag exposed. On the frozen v7 BT yardstick this
- *  lifts v8:zoner from a tie to STRICT #1 on ALL THREE maps: classic 1690 (+24 over
- *  v7:zoner, the prior top), village 1669 (+8), pirate 1523 (+8, mirror h2h 52%,
- *  whole-pool residuals ≥ neutral — the voronoiShrinkOff config keeps the mid-game
- *  squeeze without disrupting the symmetric shrink endgame). classic is decisive;
- *  village/pirate are modest-but-real (those maps are near coin-flips).
+ *  lifts v8:zoner from a tie to STRICT #1 on ALL THREE maps. A 2026-06-30 refine
+ *  (§十六) adds CENTRALITY weighting to the Voronoi diff (voronoiCentralW=30, classic
+ *  only — own profile for village/pirate at 0) for a further +20 Elo on classic via
+ *  centre-control beating the trapper-sealer:
+ *    classic 1710 (+45 over v7:zoner), village 1669 (+8), pirate 1523 (+8).
+ *  classic is decisive; village/pirate are modest-but-real (near coin-flip maps —
+ *  centralW>0 regresses them, so it is classic-only via the split profile).
  *
  *  Why ZONER is the live default (per the user's call, 2026-06-28): the two rules
  *  are a develop-and-control doctrine that only the Zoner can actually honour — it

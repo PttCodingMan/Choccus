@@ -795,5 +795,36 @@ pirate 池極扁（6 隻擠在 ~1460–1523）。**關鍵在 `voronoiShrinkOff`*
 ### 如何用 / 重跑
 - 量尺定位：`npm run bt-rank -- --target=v8:zoner --map=<m> --no-write`（對 v7 池；classic/village 嚴格 #1）。
 - 快篩新 weight/λ：`npm run v5-screen`（paired CRN，先 `--save-baseline` 存現役、翻旋鈕再跑）。
-- 死因診斷：`npm run v5-diag -- --target=v8:zoner --opponent=v7:<arch> --map=<m>`（逐秒崩潰軌跡）。
+- 死因診斷：`npm run v5-diag -- --target=v8:zoner --opponent=v7:<arch> --map=<m>`（逐秒崩潰軌跡，加 `--boards=N` 印每秒整張地圖）。
 - caps 若再動 → 須重 `bt-seed` 三圖（v7 量尺不變則免）。
+
+## 十六、centrality-weighted Voronoi → classic +20 Elo（2026-06-30 自主調參）
+
+> 一句話：**用報告 §3.2 chamber／§3.7 P2「居中＝可達空間更大、把對手擠外圈」refine §十五 的 Voronoi——
+> 把領域差按中心性加權（`voronoiCentralW`），classic 1690→1710（+20 Elo over 前冠軍），三圖仍全 #1。**
+
+### 機制
+`voronoiDiff` 的每個我方安全格貢獻一個 centrality 權重（中心格 ×3.4，向外 8 格遞減到 ×1；`VORONOI_CENTRAL_SPAN=8`），
+所以擠壓偏好**佔住晚硬化的中心、把對手推外圈**（縮圈先殺外圈）。`voronoiCentralW` per-map：classic **30**、
+village/pirate **0**。
+
+### 結果（`bt-rank` 80-rep，confirmed broad win — 非單一對手 overfit）
+| 圖 | 前冠軍（centralW 0）| **centralW 30** | 關鍵 |
+| --- | --- | --- | --- |
+| **classic** | 1690（+24）| **1710（+45 over v7:zoner，+20 over 前冠軍）** | 殘差**全面提升**：runner 73→76%、trapper 51→60%、zoner 56→58%、farmer 59→61%；僅 reactive −2 |
+| village | 1669（+8）| 1669（+8，不變）| centralW>0 會崩 village（trapper 45%）→ 拆 `VILLAGE_PROFILE`（centralW 0）保 #1 |
+| pirate | 1523（+8）| 1523（+8，不變）| centralW 在開放圖崩 runner（−13.5%）→ pirate 維持 0 |
+
+### 兩個關鍵教訓（給未來）
+1. **非單調＋60-rep 不可信**：centralW 15 在 80-rep 是 wash（1689；60-rep 的 +11 是雜訊），30 才是峰值（+20）。
+   小效果一律用 ≥80-rep 定案，別信 60-rep。
+2. **screen 的保守 DROP 會藏住強度加權的 BT win**：centralW 的 `v5-screen` 因 runner 退步而 DROP，但 bt-rank
+   反而漲（中心控場其實對 trapper/farmer/runner 全面有利，screen 的小 N 把 runner 看歪了）。**換 archetype-class
+   的 lever 一律以 bt-rank 為準、screen 只當首篩。**
+
+### 拆 profile（第一次 classic/village 分歧）
+`VILLAGE_PROFILE = {...CLASSIC_PROFILE, voronoiCentralW: 0}`，`BotController.profileFor` 加一行 village 派發。
+其餘旋鈕 village 仍完全沿用 classic。`shrinkCenterPriorityWeight` 與 centralW=30 冗餘（0/20/40 同分）→ 維持 20。
+
+### 驗證
+lint／tsc／`test:ci`(240) ✅；自陷護欄 10/10（zoner+centralW30 自陷率 1.87%，安全閘不增送頭）✅。
