@@ -1,6 +1,12 @@
 import type { MapKind } from '../sim/Map';
 /** Per-map champion = the live default bot, used in solo / spectate / net backfill.
- *  ALL maps = v8:zoner (the 控場流 / zone-control archetype) as of 2026-06-28.
+ *  classic = v8:zoner (控場流), village + pirate = v8:hunter (獵殺流) as of 2026-06-30.
+ *  SPLIT rationale: direct CRN h2h v8:hunter vs v8:zoner (80-rep ×2 seatings) is
+ *  classic 44.1% (zoner decisively wins — its Voronoi squeeze upgrade counters the
+ *  dive), but a COIN-FLIP on the open/symmetric maps — village 50.9%, pirate 47.8%
+ *  (both inside noise; BT also ties them there). On the two maps where strength is
+ *  indistinguishable we ship the AGGRESSIVE hunter as the default for play feel;
+ *  classic keeps zoner where it genuinely wins. See docs/ai-versions.md §十五/§十六.
  *
  *  v8 = the v6 champion roster (Zoner backbone + aggressive Hunter front) evolved
  *  by adopting the two BnB three-map tactic rules prototyped on the v7 yardstick
@@ -23,16 +29,18 @@ import type { MapKind } from '../sim/Map';
  *  classic is decisive; village/pirate are modest-but-real (near coin-flip maps —
  *  centralW>0 regresses them, so it is classic-only via the split profile).
  *
- *  Why ZONER is the live default (per the user's call, 2026-06-28): the two rules
- *  are a develop-and-control doctrine that only the Zoner can actually honour — it
- *  FARMS (so Rule 1 「發育到聯通」 is live) and HOLDS CENTRE (so Rule 2 「縮圈佔中心」
- *  is live). The aggressive Hunter is `pureHunt` — it never farms, so Rule 1 is
- *  structurally inert for it, and the ship-gate measured Rule 2 REGRESSING it on the
- *  cramped classic map (v8:hunter vs v6:hunter, v5-probe 60×2×3: classic 46.3%,
- *  pirate 50.0%, village 65.8% — fails the ≥50%-everywhere gate). So the bot that is
- *  genuinely #1 on all three maps AND embodies both rules is the Zoner; it is the
- *  live champion. The aggressive Hunter stays SELECTABLE via `?strategy=hunter` for
- *  players who want a relentless attacker, but it is no longer the default.
+ *  Why this split (per the user's call, 2026-06-30, superseding the 2026-06-28
+ *  all-zoner default): on CLASSIC the develop-and-control Zoner decisively wins the
+ *  h2h (zoner 55.9% vs hunter) — its Voronoi territory-squeeze upgrade (§十五/§十六)
+ *  directly counters the aggressor's dive — so classic keeps zoner. On VILLAGE/PIRATE
+ *  the two are statistically TIED (open/symmetric maps wash any deterministic edge to
+ *  ~50%: hunter h2h 50.9% / 47.8%, BT also ties them), so we ship the AGGRESSIVE
+ *  Hunter there for a livelier play feel at no measured bench cost. NOTE: the live
+ *  `?strategy=hunter` (Strategies.ts) is NOT `pureHunt` — it keeps the Zoner
+ *  development backbone (farms + growUntilConnected) and adds `digToFoeWeight` to
+ *  proactively open a path toward the foe; the pure-aggression `pureHunt` bot is only
+ *  the v7 BT-yardstick archetype (a different bot), so the older "Hunter never farms"
+ *  framing does NOT describe the shipped Hunter.
  *
  *  v8:zoner = the Zoner defensive backbone (stand-off ring, escape-redundancy stack:
  *  entrapWeight 20 + robustRefuge + the foe-independent shrinkEntrapWeight) PLUS the
@@ -45,8 +53,8 @@ import type { MapKind } from '../sim/Map';
 export const MAP_CHAMPION: Readonly<Record<MapKind, { version: number; archetype: string }>> =
   Object.freeze({
     classic: { version: 8, archetype: 'zoner' },
-    pirate:  { version: 8, archetype: 'zoner' },
-    village: { version: 8, archetype: 'zoner' },
+    pirate:  { version: 8, archetype: 'hunter' },
+    village: { version: 8, archetype: 'hunter' },
   });
 export function championFor(map: MapKind): { version: number; archetype: string } {
   // New/unknown maps (added via the editor) reuse the live default champion.
