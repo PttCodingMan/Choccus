@@ -147,10 +147,19 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // corridor while a foe is near (the trapper vChain-seal death the v5-trace showed).
   // classic on.
   corridorGate: true,
-  // v5 FARMING CADENCE: OFF for classic. Faster farm tempo (no-waste + skipping the
-  // bombChance throttle) backfires on the cramped lattice — it herds the bot into
-  // the trapper's vChain seal (screen -15.6% vs trapper, gate flat).
-  farmCadence: false,
+  // v5 FARMING CADENCE: ON for classic+village (2026-06-30). Faster farm tempo
+  // (no-waste + skipping the bombChance throttle) USED to backfire on the cramped
+  // lattice (old screen -15.6% vs trapper) by herding the bot into the trapper's
+  // vChain seal — but that result was pre-Voronoi. The §十五/§十六 Voronoi centre-
+  // squeeze now controls the middle and pushes the foe outward, which removes that
+  // failure mode: re-screened on the current engine (v5-screen, v8:zoner classic /
+  // v8:hunter village vs v7:trapper+v7:hunter, 40 rep paired CRN) it is now a WASH
+  // on classic (+1.0% trapper / +2.1% hunter, z<0.3) and a positive lean on village
+  // (+7.3% / +5.2%, z~0.8) — no measured strength cost, faster development. Shipped
+  // to let the bot reach its kit sooner on all three maps (pirate was already on).
+  // VILLAGE_PROFILE spreads this, so it inherits the ON state. No bt-rank promotion
+  // (screen INCONCLUSIVE, not ESCALATE) — flipped for dev-tempo, not an Elo claim.
+  farmCadence: true,
   // v6 SHRINK ESCAPE-BRANCH defense: keep an exit as the shrink wall closes (foe-
   // independent), targeting the ~20/38 mirror losses to the shrink squeeze that v5's
   // foe-triggered entrap can't reach. classic ON; see MapProfile.ts.
