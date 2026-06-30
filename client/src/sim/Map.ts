@@ -85,9 +85,17 @@ const VILLAGE_TEMPLATE: readonly string[] = [
  * The authored 'pirate' layout: 13 rows of 15 chars each, row index = y,
  * char index = x. Interior HARD anchors: the four corner pillars and a central
  * horizontal hard bar; everything else is SOFT. `@` marks the four corner spawns.
+ *
+ * SPAWN PLACEMENT: the two TOP spawns sit at x=2/x=12 (not the old center-pair
+ * x=5/x=9). A 1v1 duel takes spawn slots 0,1 = the first two in scan order = the
+ * top pair, so they MUST be far apart — at x=5/x=9 (4 tiles) the bots met before
+ * they could develop and locked into a passive sudden-death standoff (dev/bot
+ * plateaued ~1 upgrade vs ~4 once widened). x=1/x=13 (or the literal corners)
+ * box the bot in against the `#` pillar + PUSH ring, so x=2 is the inset sweet
+ * spot. The bottom pair stays at x=1/x=13 (12 apart, their pockets open inward).
  */
 const PIRATE_TEMPLATE: readonly string[] = [
-  'SSSS.@.S.@.SSSS',
+  'SS@S.S.S.S.S@SS',
   'S#S.PPP.PPP.S#S',
   'SS.P.S.P.S.P.SS',
   'S.P.SSSSSSS.P.S',
