@@ -87,7 +87,7 @@ import {
   forwardSearch,
 } from './core/forwardSearch';
 import type { MapProfile } from './MapProfile';
-import { CLASSIC_PROFILE } from './classic/MapProfile';
+import { CLASSIC_PROFILE, VILLAGE_PROFILE } from './classic/MapProfile';
 import { PIRATE_PROFILE } from './pirate/MapProfile';
 
 // Live bot = current AI_VERSION (see version.ts)
@@ -398,6 +398,9 @@ const HUNT_SURV_FLOOR = 4;
 /** Center tile (used by positionValue): floor(MAP_COLS/2), floor(MAP_ROWS/2). */
 const CENTER_X = Math.floor(MAP_COLS / 2); // 7
 const CENTER_Y = Math.floor(MAP_ROWS / 2); // 6
+/** Manhattan radius over which the Voronoi centrality weight tapers to 0 (tiles
+ *  this far from centre get no central bonus). 8 covers the central core. */
+const VORONOI_CENTRAL_SPAN = 8;
 
 /**
  * Per-tile SUDDEN-DEATH SURVIVAL RANK: how LATE a tile hardens in the inward
@@ -609,6 +612,28 @@ export class BotController {
    * a follow-up seal can cap. classic on, pirate off. */
   private curCorridorGate = false;
 
+  /** Effective VORONOI territory weight for THIS decision (per-map
+   * `MapProfile.voronoiWeight`). 0 = off ⇒ perAction unchanged ⇒ byte-identical
+   * to the frozen yardstick zoner; > 0 biases each root by the safe reachable-tile
+   * differential at its result tile (multi-source-BFS squeeze, both directions). */
+  private curVoronoiWeight = 0;
+
+  /** Effective VORONOI λ (foe-territory subtraction %, report P4) for THIS
+   * decision (`MapProfile.voronoiFoeLambda`). 0 = pure defense (my safe space
+   * only), 100 = full differential (also compress the foe). */
+  private curVoronoiFoeLambda = 100;
+
+  /** Effective VORONOI shrink-off flag (`MapProfile.voronoiShrinkOff`). When true,
+   * the territory term is suppressed once the sudden-death shrink is live — on the
+   * open pirate map the mid-game squeeze helps but the symmetric SHRINK endgame is
+   * a coin-flip the term only destabilises. classic/village false. */
+  private curVoronoiShrinkOff = false;
+
+  /** Effective VORONOI centrality weight (`MapProfile.voronoiCentralW`). 0 =
+   * uniform tile weight (proven). > 0 weights central owned tiles more, so the
+   * squeeze prefers the late-hardening centre and pushes the foe outward. */
+  private curVoronoiCentralW = 0;
+
   /** 反應流 Reactive: nearest-foe tile + foe bomb count seen LAST decision, so we
    * can derive the foe's last action (move direction / fresh bomb) to mirror. */
   private lastFoeTile = -1;
@@ -694,7 +719,8 @@ export class BotController {
   private profileFor(state: SimState): MapProfile {
     if (this.profileOverride !== null) return this.profileOverride;
     if (state.mapKind === 'pirate') return PIRATE_PROFILE;
-    return CLASSIC_PROFILE; // 'classic' and 'village' (see note above)
+    if (state.mapKind === 'village') return VILLAGE_PROFILE; // classic-derived, centralW 0
+    return CLASSIC_PROFILE;
   }
 
   /** Bot-private uniform float in [0, 1); threads the RNG state forward. */
@@ -1466,6 +1492,99 @@ export class BotController {
       if (reached) branches += 1;
     }
     return branches;
+  }
+
+  /**
+   * VORONOI territory differential (report §3.2: offense-squeeze ≡ Voronoi
+   * reachable-tile diff). Tron-style multi-source BFS over openPassable: flood
+   * SIMULTANEOUSLY from MY result tile (mx,my) and from EVERY live foe tile; each
+   * open tile is owned by whichever side reaches it in fewer hops (equal distance
+   * ⇒ tie / neutral). Returns (#tiles I reach first − #tiles a foe reaches first),
+   * counting only SAFE-DWELL tiles (earliestLethal beyond the survival horizon) so
+   * a tile under imminent flame belongs to no one.
+   *
+   * It is a GLOBAL signal — it reads the foe compressing our reachable space (or
+   * us compressing theirs) many tiles / several seconds out, where the depth-4
+   * forward search (~3 s) is blind (v5-diag classic: free 16.9→4.8, branches
+   * 2.0→0.5 over the last ~3 s, the collapse starting BEFORE that horizon). Bigger
+   * = we command more safe space than the foe: the SAME quantity for defense (keep
+   * ours from collapsing) and offense (collapse theirs). Pure / deterministic:
+   * fixed DIRECTION_ORDER, integer hops, single FIFO frontier (uniform edge weight
+   * ⇒ exact BFS distance order, so equal-distance contests resolve to ties).
+   */
+  private voronoiDiff(
+    state: SimState,
+    danger: IntervalDanger,
+    mx: number,
+    my: number,
+    foeTiles: ReadonlySet<number>,
+    foeLambdaPct: number,
+    centralW: number,
+  ): number {
+    const base = openPassable(state);
+    const N = MAP_COLS * MAP_ROWS;
+    // owner: 0 unvisited, 1 me, 2 foe, 3 tie/contested.
+    const owner = new Int8Array(N);
+    const dist = new Int16Array(N);
+    const queue: number[] = [];
+    const meIdx = idx(mx, my);
+    owner[meIdx] = 1;
+    queue.push(meIdx);
+    for (const f of foeTiles) {
+      if (owner[f] === 0) {
+        owner[f] = 2;
+        queue.push(f);
+      } else if (owner[f] === 1) {
+        owner[f] = 3; // me and a foe on the same tile → fully contested.
+      }
+    }
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head]!;
+      head += 1;
+      const cd = dist[cur]!;
+      const co = owner[cur]!;
+      const cx = cur % MAP_COLS;
+      const cy = (cur - cx) / MAP_COLS;
+      for (const d of DIRECTION_ORDER) {
+        const nx = cx + dirDX(d);
+        const ny = cy + dirDY(d);
+        if (!inBounds(nx, ny) || !base(nx, ny)) continue;
+        const ni = idx(nx, ny);
+        if (owner[ni] === 0) {
+          owner[ni] = co;
+          dist[ni] = cd + 1;
+          queue.push(ni);
+        } else if (dist[ni] === cd + 1 && owner[ni] !== 3 && owner[ni] !== co) {
+          owner[ni] = 3; // reached at equal distance by the other side → tie.
+        }
+      }
+    }
+    // Each owned safe tile contributes a CENTRALITY weight (report §3.2 chamber /
+    // §3.7 P2): central tiles are worth more, so the squeeze prefers commanding the
+    // late-hardening CENTRE and pushing the foe to the edge (where the shrink kills
+    // it first). centralW=0 → uniform weight 100 → returns the plain tile count
+    // (byte-identical to the proven λ-only diff). Scaled by /100 so the magnitude
+    // stays ≈ a tile count and voronoiWeight does not need retuning.
+    let mineW = 0;
+    let foeW = 0;
+    for (let t = 0; t < N; t++) {
+      const o = owner[t]!;
+      if (o !== 1 && o !== 2) continue;
+      const e = danger.earliestLethal(t);
+      if (e !== undefined && e <= SURV_SAFE_HORIZON) continue; // not safe-dwell.
+      const cx = t % MAP_COLS;
+      const cy = (t - cx) / MAP_COLS;
+      const w =
+        100 +
+        centralW * Math.max(0, VORONOI_CENTRAL_SPAN - (Math.abs(cx - CENTER_X) + Math.abs(cy - CENTER_Y)));
+      if (o === 1) mineW += w;
+      else foeW += w;
+    }
+    // report P4: S_self − λ·S_opp. λ (foeLambdaPct/100) trades pure DEFENSE (λ=0:
+    // maximise my own uncontested safe space) against OFFENSE (λ=100: also compress
+    // the foe's space). Tuned per map.
+    return Math.floor((mineW - Math.floor((foeW * foeLambdaPct) / 100)) / 100);
   }
 
   /**
@@ -2834,6 +2953,10 @@ export class BotController {
     this.curEntrapWeight = profile.entrapWeight;
     this.curRobustRefuge = profile.robustRefuge;
     this.curCorridorGate = profile.corridorGate;
+    this.curVoronoiWeight = profile.voronoiWeight;
+    this.curVoronoiFoeLambda = profile.voronoiFoeLambda;
+    this.curVoronoiShrinkOff = profile.voronoiShrinkOff;
+    this.curVoronoiCentralW = profile.voronoiCentralW;
 
     const huntStart = profile.huntStartTick;
     const urgency =
@@ -3418,6 +3541,62 @@ export class BotController {
           return RootAction.STAY;
       }
     };
+
+    // ---- VORONOI TERRITORY SQUEEZE (report §3.2 — H3 / P2 / P4) ------------
+    // Bias each legal root by the multi-source-BFS reachable-tile differential
+    // (safe tiles I reach first − safe tiles a foe reaches first) at its result
+    // tile. A GLOBAL potential, re-evaluated every decision tick: it catches the
+    // foe compressing our safe space the long way out (v5-diag classic: free
+    // 16.9→4.8, branches 2.0→0.5 — the collapse begins BEFORE the depth-4 ~3 s
+    // horizon) AND rewards us compressing a passive foe's space the same way
+    // (attack ≡ squeeze, both directions). Bounded (curVoronoiWeight small) so it
+    // only re-orders equally-surviving roots; the W_SURVIVE flood and refuge gate
+    // inside the search are untouched. Off (weight 0) ⇒ byte-identical champion.
+    // CONNECTED gate: only contest territory when an OPEN path to a foe exists
+    // (foeDist < cap). While isolated (walled off, foeDist == cap) there is no foe
+    // to squeeze or be squeezed by, so the term is both meaningless and the costly
+    // multi-source BFS is skipped through the whole isolated farming phase.
+    // EXPLICIT OPT-IN (this.tuning.voronoi): only the control-style Zoner archetype
+    // (the live champion) carries the flag. The aggressive Hunter AND the difficulty
+    // presets (easy/normal/hard — NOT pureHunt-flagged, so a !pureHunt gate would
+    // wrongly include them) stay byte-identical, keeping the player-facing difficulty
+    // path and the self-trap guards unchanged. Territory-holding is the Zoner's lever.
+    if (
+      this.tuning.voronoi === true &&
+      this.curVoronoiWeight > 0 &&
+      foeTilesNow.size > 0 &&
+      foeDist < ISOLATED_FOE_DIST &&
+      !(this.curVoronoiShrinkOff && state.tick >= SUDDEN_DEATH_START_TICK)
+    ) {
+      for (let a = RootAction.STAY as number; a <= RootAction.PLACE_BOMB; a++) {
+        if (perAction[a] === Number.NEGATIVE_INFINITY) continue;
+        const dir = actionDir(a as RootAction); // NONE for STAY & PLACE_BOMB.
+        const rx = dir === Direction.NONE ? myX : myX + dirDX(dir);
+        const ry = dir === Direction.NONE ? myY : myY + dirDY(dir);
+        perAction[a]! +=
+          this.curVoronoiWeight *
+          this.voronoiDiff(
+            state,
+            danger,
+            rx,
+            ry,
+            foeTilesNow,
+            this.curVoronoiFoeLambda,
+            this.curVoronoiCentralW,
+          );
+      }
+      // Re-argmax over the biased scores (fixed order, strict >, first wins) so
+      // bestAction / hysteresis / runner-up all read the territory-aware scores.
+      let bestA = RootAction.STAY as RootAction;
+      let bestS = Number.NEGATIVE_INFINITY;
+      for (let a = RootAction.STAY as number; a <= RootAction.PLACE_BOMB; a++) {
+        if (perAction[a]! > bestS) {
+          bestS = perAction[a]!;
+          bestA = a as RootAction;
+        }
+      }
+      result.bestAction = bestA;
+    }
 
     // ---- GOAL HYSTERESIS ---------------------------------------------------
     // Use SEARCH-derived per-action scores to decide whether to keep or switch

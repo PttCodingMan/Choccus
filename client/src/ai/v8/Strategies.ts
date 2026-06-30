@@ -45,6 +45,7 @@ export const STRATEGIES: ReadonlyArray<{
       recklessBombChance: 0,
       combatRangeTiles: 7,
       zoneStandoff: 4, // hold the ring ~4 tiles out; compress, don't dive.
+      voronoi: true, // opt in to the territory-squeeze (the control-style lever).
     }),
   }),
   // 獵殺流 Hunter — the AGGRESSIVE v6 variant (goal #3 "主動開路過去擊殺消極對手").

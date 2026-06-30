@@ -18,8 +18,8 @@
  *
  * Pure analysis (no BT, no history). Deterministic CRN seeds (scenarioSeed).
  */
-import { GamePhase } from '../../../shared/types';
-import { FUSE_TICKS, MAP_COLS, SPARK_TICKS, SUDDEN_DEATH_START_TICK } from '../../../shared/constants';
+import { GamePhase, TileKind } from '../../../shared/types';
+import { FUSE_TICKS, MAP_COLS, MAP_ROWS, SPARK_TICKS, SUDDEN_DEATH_START_TICK } from '../../../shared/constants';
 import { makeFeelParams } from '../../../client/src/config/FeelParams';
 import { type InputFrame } from '../../../client/src/sim/InputBuffer';
 import { DIRECTION_ORDER } from '../../../client/src/sim/InputBuffer';
@@ -127,6 +127,48 @@ interface Sample {
   free: number;
   devGap: number; // (myFire+myCannon) - (foeFire+foeCannon)
   enemyBombsNear: number;
+  board?: BoardSnap; // full map state for this tick (only when --boards is on).
+}
+
+/** Full per-tick map state for the ASCII board render — every tile + every bomb
+ *  (with fuse) + the flame/danger footprint, so a LOSS can be replayed visually
+ *  second-by-second to see HOW the seal closes (which tiles the bombs deny). */
+interface BoardSnap {
+  map: Uint8Array; // clone of state.map (TileKind per tile).
+  bombs: { x: number; y: number; fire: number; fuse: number; mine: boolean }[];
+  items: { x: number; y: number }[];
+  meX: number;
+  meY: number;
+  foeX: number;
+  foeY: number;
+  foeShown: boolean; // foe alive & not trapped (else don't draw it).
+  /** Per-tile danger: 0 safe, 1 will burn within the fuse (~3 s), 2 burning now. */
+  lethal: Uint8Array;
+}
+
+/** Render a BoardSnap as 13 rows of 15 chars. Legend:
+ *  @ target · E foe · B bomb · X flame-now · x danger-soon · # wall · : soft
+ *  % crate · i item · · safe-open */
+function renderBoard(b: BoardSnap): string[] {
+  const bombAt = new Set<number>(b.bombs.map((bm) => bm.y * MAP_COLS + bm.x));
+  const itemAt = new Set<number>(b.items.map((it) => it.y * MAP_COLS + it.x));
+  const lines: string[] = [];
+  for (let y = 0; y < MAP_ROWS; y++) {
+    let row = '';
+    for (let x = 0; x < MAP_COLS; x++) {
+      const t = y * MAP_COLS + x;
+      if (x === b.meX && y === b.meY) row += '@';
+      else if (b.foeShown && x === b.foeX && y === b.foeY) row += 'E';
+      else if (bombAt.has(t)) row += 'B';
+      else if (itemAt.has(t)) row += 'i';
+      else if (b.map[t] === TileKind.HARD) row += '#';
+      else if (b.map[t] === TileKind.SOFT) row += ':';
+      else if (b.map[t] === TileKind.PUSH) row += '%';
+      else row += b.lethal[t] === 2 ? 'X' : b.lethal[t] === 1 ? 'x' : '·';
+    }
+    lines.push('      ' + row);
+  }
+  return lines;
 }
 
 interface Loss {
@@ -146,6 +188,10 @@ async function main(): Promise<void> {
   const target = parseChallenger(arg(argv, 'target', 'v5:zoner'));
   const opponent = parseChallenger(arg(argv, 'opponent', 'v3:trapper'));
   const repeats = Number(arg(argv, 'repeats', '40'));
+  // --boards=N: also dump the per-second ASCII MAP STATE (bombs, flame, walls,
+  // both players) for the first N LOSS games per map, so the seal can be read
+  // tile-by-tile. 0 = off (aggregate scalars only). Heavy → keep N small (1-3).
+  const boardsN = Number(arg(argv, 'boards', '0'));
   const mapArg = arg(argv, 'map', '');
   const selMaps = mapArg
     ? (mapArg.split(',').map((s) => s.trim()) as MapKind[]).filter((m) => MAPS.includes(m))
@@ -164,6 +210,8 @@ async function main(): Promise<void> {
     // For comparison: target's window-mean features sampled at game end in WINS.
     const winWindowBranches: number[] = [];
     const winWindowFoeMan: number[] = [];
+    // --boards: capture map snapshots until N losses have been dumped this map.
+    let boardsRendered = 0;
 
     for (let r = 0; r < repeats; r++) {
       const seed = scenarioSeed(mapIndex, r);
@@ -209,6 +257,27 @@ async function main(): Promise<void> {
               if (b.ownerSlot === targetSlot) continue;
               if (Math.abs(b.tileX - mx) + Math.abs(b.tileY - my) <= b.fire + 2) enemyBombsNear += 1;
             }
+            // Capture the full map state only while we still owe board dumps —
+            // once N losses are rendered this map, stop the per-tick clone cost.
+            let board: BoardSnap | undefined;
+            if (boardsN > 0 && boardsRendered < boardsN) {
+              const lethal = new Uint8Array(MAP_COLS * MAP_ROWS);
+              for (let t = 0; t < lethal.length; t++) {
+                const e = danger.earliestLethal(t);
+                lethal[t] = e === undefined ? 0 : e <= SPARK_TICKS ? 2 : e <= FUSE_TICKS ? 1 : 0;
+              }
+              board = {
+                map: Uint8Array.from(state.map),
+                bombs: state.bombs.map((b) => ({
+                  x: b.tileX, y: b.tileY, fire: b.fire, fuse: b.fuseTicks,
+                  mine: b.ownerSlot === targetSlot,
+                })),
+                items: state.items.map((it) => ({ x: it.tileX, y: it.tileY })),
+                meX: mx, meY: my, foeX: fx, foeY: fy,
+                foeShown: foe.alive && !foe.trapped,
+                lethal,
+              };
+            }
             ring.push({
               tick: state.tick,
               branches: escapeBranches(state, danger, mx, my),
@@ -216,6 +285,7 @@ async function main(): Promise<void> {
               free: freeSpace(state, danger, mx, my),
               devGap: devSum(me) - devSum(foe),
               enemyBombsNear,
+              board,
             });
             if (ring.length > RING_CAP) ring.shift();
           }
@@ -245,12 +315,24 @@ async function main(): Promise<void> {
               : atDeath.branches <= 1
                 ? 'SEALED'
                 : 'OPEN';
-            lossRecords.push({
-              deathTick: targetDeathTick,
-              cause,
-              atDeath,
-              trace: TRACE_SECONDS.map((s) => sampleAt(ring, targetDeathTick - s * 60)),
-            });
+            const trace = TRACE_SECONDS.map((s) => sampleAt(ring, targetDeathTick - s * 60));
+            lossRecords.push({ deathTick: targetDeathTick, cause, atDeath, trace });
+            // --boards: dump the per-second map for this loss (seal close-up).
+            if (boardsN > 0 && boardsRendered < boardsN) {
+              boardsRendered += 1;
+              console.log(
+                `\n  ┌─ LOSS #${boardsRendered} on ${map} (${cause}, death tick ${targetDeathTick}, seat ${seat}) ` +
+                  `— @ target  E foe  B bomb  X flame-now  x danger-soon  # wall  : soft  % crate  i item  · safe`,
+              );
+              for (let i = TRACE_SECONDS.length - 1; i >= 0; i--) {
+                const s = trace[i];
+                if (!s?.board) continue;
+                console.log(
+                  `  t−${String(TRACE_SECONDS[i]).padStart(2)}s  branches=${s.branches} free=${s.free} foeDist=${s.foeMan} enemyBmbNear=${s.enemyBombsNear}`,
+                );
+                for (const line of renderBoard(s.board)) console.log(line);
+              }
+            }
           }
         } else if (!targetAlive && !oppAlive) {
           draws += 1;

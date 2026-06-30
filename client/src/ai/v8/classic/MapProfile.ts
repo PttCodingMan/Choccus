@@ -155,4 +155,25 @@ export const CLASSIC_PROFILE: MapProfile = Object.freeze({
   // independent), targeting the ~20/38 mirror losses to the shrink squeeze that v5's
   // foe-triggered entrap can't reach. classic ON; see MapProfile.ts.
   shrinkEntrapWeight: 30,
+  // VORONOI TERRITORY squeeze (report §3.2). 0 = off (byte-identical to the frozen
+  // yardstick zoner); tuned by direct CRN vs the v7 pool. See MapProfile.ts.
+  voronoiWeight: 3,
+  // λ=0 → PURE DEFENSE (my own safe space only); full λ cost the farmer matchup.
+  voronoiFoeLambda: 0,
+  voronoiShrinkOff: false,
+  // CENTRALITY-WEIGHTED Voronoi (§3.2 chamber / §3.7 P2): command the late-hardening
+  // centre + push the foe outward. Confirmed bt-rank WIN on classic (1690→1701, +11;
+  // trapper 51%→59% — the documented weak residual fixed), even though v5-screen
+  // flagged the runner regression — strength-weighted BT rose because trapper is a
+  // strong pool member. VILLAGE regresses with it (own profile below holds 0).
+  voronoiCentralW: 30,
+});
+
+/** VILLAGE reuses the CLASSIC profile EXCEPT the Voronoi centrality weight:
+ *  village's trapper matchup CRASHES with centralW>0 (45%, −6 → drops to #2), while
+ *  classic gains from it. So village holds centralW 0 (its proven champion: BT #1,
+ *  1669 +8). The first knob where classic and village optima genuinely diverge. */
+export const VILLAGE_PROFILE: MapProfile = Object.freeze({
+  ...CLASSIC_PROFILE,
+  voronoiCentralW: 0,
 });

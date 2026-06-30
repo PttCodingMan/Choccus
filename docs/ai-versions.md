@@ -726,3 +726,105 @@ sealer 為正 → 無可 gate 的好東西**。未來若找到「對真封殺者
 - **別再跑** pocketAvoid／seal-scenario／sealPredict-on-zoner／靜態 corridorGate-on-pirate／純進攻 lead-bomb——本節已證實全否決。
 - **要動 AI 前先重量**：歷史逐旋鈕勝率過期，先用 `v5-screen` 對現 v7 池重測 baseline，再談。
 - **自適應 gating（#13 的 detector）保留為工具概念**：找到正 lever 時可用。
+
+## 十五、v8 Voronoi 領域擠壓（dypm 報告 H3/P2/P4）— 破 §十四 的「調參到頂」（2026-06-29）
+
+> 一句話：**§十四 用一組防守／幻影擊殺 lever 試到頂、判「純調參無法嚴格超越 v7:zoner」；
+> 但那組 lever 沒試報告的核心軸——把攻擊建模成「結構性 Voronoi 領域擠壓」。補上這條，
+> classic 直接 +24 嚴格超越量尺頂、village +8，雙圖嚴格 #1。** 這是 v8 的 in-place 強化（v7 量尺不動）。
+
+### 由來：報告給的、§十四 沒試的軸
+使用者交付 `bomberman_dypm_策略對應報告.md`（Pommerman/dypm 策略映射）＋升級過的**逐秒**死前回朔
+`v5-diag`（`TRACE_SECONDS = [0..10]`，每秒一欄）。報告核心：**攻擊 = 結構性壓縮對手可達安全格集合
+（squeeze ≡ Tron Voronoi 先到格數差），不是賭對手走進炸彈（phantom kill）**。§十四 跑過的 9 條 lever
+（pocketAvoid／seal-scenario／sealPredict／corridorGate／lead-bomb）全是「防幻影擊殺」或「投影對手」——
+**沒有一條是 Voronoi 領域差**（報告 P-high #1 / H3 / P2 / P4）。故 §十四 的「到頂」只證明「那組 lever 到頂」。
+
+### 診斷（逐秒 v5-diag，classic mirror）：死因＝結構性擠壓
+v8:zoner vs v8:zoner（48.8%）敗局逐秒：死前 8 秒對手逼近到 ~5 格、放封口彈，**自由空間 16.9→4.8、
+逃生分支 2.0→0.5（~6–8 秒內崩成死胡同）**，然後對手退回 7.7 格、靠牆＋彈把困在 pocket 的 bot 磨死。
+勝局逃生分支收在 2.37、敗局 0.4。**正是報告 §1/§3.2 的「從遠處擠壓對手可達空間」，非 phantom-kill 俯衝。**
+關鍵：崩潰 6–8 秒前就開始，**遠在 depth-4 前瞻（~3 秒）視野之外** → 需要一個全域訊號。
+
+### 機制：多源 BFS Voronoi 領域差（root-level 勢能）
+`BotController.voronoiDiff`：Tron 式多源 BFS，從**我方結果格**與**每個敵格**同時 flood，每個 open 格歸給
+先到的一方（等距＝平手），回傳「我先到的安全格數 − 對手先到的安全格數」。在 `sample()` forwardSearch
+之後，對每個合法 root action 的結果格加 `voronoiWeight × voronoiDiff`、重算 argmax。每決策 tick 重評＝
+導航勢能（如 growth pull），不需深度。**安全閘不動**（bounded ≪ W_SURVIVE flood，只重排同等存活的格）。
+純整數 FIFO BFS、固定 DIRECTION_ORDER、等距→平手與 seeding 無關 → 決定性（CRN 紅線 240 test 綠）。
+
+旋鈕（皆 per-map，0＝逐位元＝前一版 v8；外加 archetype `voronoi` 旗）：
+- **`voronoiWeight`**：強度。classic/village 3、pirate 3。
+- **`voronoiFoeLambda`（報告 P4 的 λ，S_self − λ·S_opp）**：λ=0＝**純防守**（只最大化自己未爭安全空間→往
+  開闊漂、遠離 passive farmer 彈場）；λ=100＝**全差分**（也壓縮對手）。**classic 實測：λ=100 把 farmer 對局
+  打掉 ~25%（逼近＝走進 farmer 彈場）；λ=0 修好（farmer −25→+12.5）。** 三圖皆 λ=0。
+- **`voronoiShrinkOff`**：pirate true——縮圈後關掉（開放圖對稱殘局是 coin-flip，term 只會擾動；mirror h2h
+  在 term 整局開時卡 ~46%，縮圈關掉後回到 ~中性）。classic/village false。
+- **連通閘**：只在 `foeDist < ISOLATED_FOE_DIST`（有開放路徑到敵）才開——孤立發育期無敵可擠（且省昂貴 BFS）。
+- **archetype `voronoi` 旗（zoner-only）**：難度檔（easy/normal/hard 非 pureHunt）與 Hunter **不帶旗 → 逐位元
+  不變**，玩家難度路徑與自陷護欄不受影響。擠壓是**控場 Zoner** 的 lever。
+
+### 結果（`bt-rank` vs 凍結 v7 池，80 reps）
+| 圖 | v8:zoner BT | 名次 | vs v7:zoner（量尺頂）| 關鍵殘差 / h2h |
+| --- | --- | --- | --- | --- |
+| **classic** | **1690** | **#1** | **+24** | runner +5（h2h 73%）farmer +1 zoner h2h 56% |
+| **village** | **1669** | **#1** | **+8** | runner +5（h2h 65%）zoner +3（h2h 54%）|
+| **pirate** | **1523** | **#1** | **+8** | 全池殘差皆正/中性：farmer/runner/trapper/reactive +1、**mirror +0（h2h 52%）**、hunter −4 |
+
+報告 H9 預測命中：最大增益來自**壓 passive fleer（runner 73%/65%）**＋**mirror 翻過 50%**（嚴格超越量尺頂）。
+classic 決定性、village 穩 #1。weight 5 把 classic 推到 +31 但 village 掉到 +1（farmer 退）→ 共用 profile 取
+weight 3（雙圖皆清楚 #1）；不為 village 邊際拆 profile。
+
+### pirate＝開放圖近 coin-flip，但 shrink-off 拿到乾淨小幅 #1
+pirate 池極扁（6 隻擠在 ~1460–1523）。**關鍵在 `voronoiShrinkOff`**：term 整局開時 40-rep 看似 mirror −4
+（縮圈擾動對稱殘局），但**縮圈後關掉**＋80-rep 量到的是 **v8:zoner 1523 #1、+8 over v7:zoner、mirror h2h 52%、
+全池殘差皆正/中性**（farmer/runner/trapper/reactive +1、mirror +0、僅 hunter −4）。即 mid-game 的領域擠壓在
+開放圖也有小幅淨利，只要不去擾動對稱的縮圈殘局。**三圖皆嚴格 #1**（classic 決定性 +24、village/pirate 各 +8）。
+> 為何 pirate 增益小：開放對稱圖的 mirror 本質近 coin-flip，**任何雙方都用的確定性 lever 在對稱殘局都趨 ~50%**
+> （報告 §3.4）。要把 pirate 也推到 classic 那種「決定性」優勢，只剩**機制非對稱**（§十 path A，產品決策）；純
+> 位置/殘局 bot-tuning 到此為止。殘局 tempo/parity（§3.5）／割點精算（H4）同理會在對稱 mirror wash，列為參考。
+
+### 回歸驗證
+- `npm run lint`（含 ai/** 決定性護欄）✅、`npm run test:ci`（240 pass，含 CRN parallel==serial 紅線）✅、
+  `tsc --noEmit` ✅。自陷護欄（ai-selfkill／ai-chaosv／ai-live-selftrap，後二含 zoner+voronoi）**10/10 過** ✅
+  ——**zoner+voronoi 自陷率 0.0187（1.87%，<6%，與無 voronoi 同）**＝安全閘確實只重排不送頭；live 聚合 easy+
+  normal+hard <5%、easy/normal/hard self-trap <12/8/8%、皆決定性。
+- live bot 成本：決策由 commitment 節流（~每 3–5 tick 一決策）→ 60Hz 預算內 trivial；只有 headless bench
+  （百萬 tick 連跑、無 frame 預算）才顯慢——故 bench 用較少 reps + mc 平行，live 不受影響。
+
+### 如何用 / 重跑
+- 量尺定位：`npm run bt-rank -- --target=v8:zoner --map=<m> --no-write`（對 v7 池；classic/village 嚴格 #1）。
+- 快篩新 weight/λ：`npm run v5-screen`（paired CRN，先 `--save-baseline` 存現役、翻旋鈕再跑）。
+- 死因診斷：`npm run v5-diag -- --target=v8:zoner --opponent=v7:<arch> --map=<m>`（逐秒崩潰軌跡，加 `--boards=N` 印每秒整張地圖）。
+- caps 若再動 → 須重 `bt-seed` 三圖（v7 量尺不變則免）。
+
+## 十六、centrality-weighted Voronoi → classic +20 Elo（2026-06-30 自主調參）
+
+> 一句話：**用報告 §3.2 chamber／§3.7 P2「居中＝可達空間更大、把對手擠外圈」refine §十五 的 Voronoi——
+> 把領域差按中心性加權（`voronoiCentralW`），classic 1690→1710（+20 Elo over 前冠軍），三圖仍全 #1。**
+
+### 機制
+`voronoiDiff` 的每個我方安全格貢獻一個 centrality 權重（中心格 ×3.4，向外 8 格遞減到 ×1；`VORONOI_CENTRAL_SPAN=8`），
+所以擠壓偏好**佔住晚硬化的中心、把對手推外圈**（縮圈先殺外圈）。`voronoiCentralW` per-map：classic **30**、
+village/pirate **0**。
+
+### 結果（`bt-rank` 80-rep，confirmed broad win — 非單一對手 overfit）
+| 圖 | 前冠軍（centralW 0）| **centralW 30** | 關鍵 |
+| --- | --- | --- | --- |
+| **classic** | 1690（+24）| **1710（+45 over v7:zoner，+20 over 前冠軍）** | 殘差**全面提升**：runner 73→76%、trapper 51→60%、zoner 56→58%、farmer 59→61%；僅 reactive −2 |
+| village | 1669（+8）| 1669（+8，不變）| centralW>0 會崩 village（trapper 45%）→ 拆 `VILLAGE_PROFILE`（centralW 0）保 #1 |
+| pirate | 1523（+8）| 1523（+8，不變）| centralW 在開放圖崩 runner（−13.5%）→ pirate 維持 0 |
+
+### 兩個關鍵教訓（給未來）
+1. **非單調＋60-rep 不可信**：centralW 15 在 80-rep 是 wash（1689；60-rep 的 +11 是雜訊），30 才是峰值（+20）。
+   小效果一律用 ≥80-rep 定案，別信 60-rep。
+2. **screen 的保守 DROP 會藏住強度加權的 BT win**：centralW 的 `v5-screen` 因 runner 退步而 DROP，但 bt-rank
+   反而漲（中心控場其實對 trapper/farmer/runner 全面有利，screen 的小 N 把 runner 看歪了）。**換 archetype-class
+   的 lever 一律以 bt-rank 為準、screen 只當首篩。**
+
+### 拆 profile（第一次 classic/village 分歧）
+`VILLAGE_PROFILE = {...CLASSIC_PROFILE, voronoiCentralW: 0}`，`BotController.profileFor` 加一行 village 派發。
+其餘旋鈕 village 仍完全沿用 classic。`shrinkCenterPriorityWeight` 與 centralW=30 冗餘（0/20/40 同分）→ 維持 20。
+
+### 驗證
+lint／tsc／`test:ci`(240) ✅；自陷護欄 10/10（zoner+centralW30 自陷率 1.87%，安全閘不增送頭）✅。

@@ -303,4 +303,49 @@ export interface MapProfile {
    * map's shrink death is a symmetric squeeze positioning can't break — §十).
    */
   readonly shrinkEntrapWeight: number;
+  /**
+   * VORONOI TERRITORY weight (0 = off, byte-identical to the frozen yardstick
+   * zoner). When > 0, each root action's search score gains
+   *   weight × voronoiDiff(resultTile)
+   * where voronoiDiff = (safe tiles I reach first − safe tiles a foe reaches
+   * first) under a Tron-style multi-source BFS (report §3.2: offense-squeeze ≡
+   * Voronoi reachable-tile diff). A GLOBAL territory signal that re-orders
+   * equally-surviving roots only (bounded ≪ the W_SURVIVE flood): it both keeps
+   * our own safe space from being compressed into the dead-end pocket that
+   * dominates v8:zoner's losses (v5-diag: free 16.9→4.8 the ~3 s out the depth-4
+   * search can't see) AND compresses a passive foe's space (the same lever, both
+   * directions — attack = squeeze, not phantom-kill). Per-map: the value is tuned
+   * by direct CRN against the v7 yardstick pool.
+   */
+  readonly voronoiWeight: number;
+  /**
+   * VORONOI λ — the foe-territory subtraction percent in the differential (report
+   * P4: S_self − λ·S_opp), 0..100. 0 = PURE DEFENSE (bias by my own uncontested
+   * safe space only) → the bot drifts toward open space and AWAY from a passive
+   * developer's bomb field. 100 = FULL DIFFERENTIAL (also reward shrinking the
+   * foe's space) → the bot advances to seal an active presser, but vs a passive
+   * farmer that advance walks it into the farmer's bombs (screen: full-λ cost the
+   * farmer matchup ~25% while helping vs runner/trapper/mirror). Inert when
+   * `voronoiWeight` is 0.
+   */
+  readonly voronoiFoeLambda: number;
+  /**
+   * VORONOI shrink-off: when true, the territory term is suppressed once the
+   * sudden-death shrink is live (tick ≥ SUDDEN_DEATH_START_TICK). On the OPEN
+   * pirate map the mid-game territory squeeze helps vs a fleer but the symmetric
+   * SHRINK endgame is a near coin-flip the term only destabilises (mirror h2h sits
+   * ~46% whenever it is on through the shrink); turning it off there keeps the
+   * mid-game gain without the endgame cost. CLASSIC/VILLAGE false. Inert when
+   * `voronoiWeight` is 0.
+   */
+  readonly voronoiShrinkOff: boolean;
+  /**
+   * VORONOI CENTRALITY weight (0 = uniform tile weight, byte-identical to the
+   * proven λ-only diff). When > 0, each owned safe tile in the Voronoi differential
+   * is weighted by its centrality (central tiles worth more, tapering to 0 at
+   * VORONOI_CENTRAL_SPAN hops), so the squeeze prefers commanding the late-hardening
+   * CENTRE and pushing the foe outward (report §3.2 chamber / §3.7 P2 centrality —
+   * "自己居中、對手居外，讓縮圈替你殺"). Tuned by direct CRN vs the v7 pool.
+   */
+  readonly voronoiCentralW: number;
 }
