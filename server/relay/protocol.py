@@ -197,19 +197,25 @@ def match_start(
     t0: int,
     map_: str | None = None,
     teams: list[int] | None = None,
+    input_delay_ticks: int | None = None,
 ) -> bytes:
     """MatchStartMsg — config is the frozen FeelParams dict (moveSpeed, …).
 
-    map/teams are OPTIONAL. The room passes its current map (omitted when the
-    default 'classic') and its manual per-slot teams array (omitted when it equals
-    the default team[i]=i, so an untouched FFA/classic room stays byte-identical
-    to before). When present, `teams` is full-length (one entry per slot).
+    map/teams/input_delay_ticks are OPTIONAL. The room passes its current map
+    (omitted when the default 'classic') and its manual per-slot teams array
+    (omitted when it equals the default team[i]=i, so an untouched FFA/classic
+    room stays byte-identical to before). When present, `teams` is full-length
+    (one entry per slot). input_delay_ticks is the room's ping-measured
+    lockstep buffer (see room.start_match); omitted only by callers that don't
+    care (tests) — the client falls back to the shared constant either way.
     """
     payload: dict[str, Any] = {"seed": seed, "slot": slot, "config": config, "t0": t0}
     if map_ is not None:
         payload["map"] = map_
     if teams is not None:
         payload["teams"] = teams
+    if input_delay_ticks is not None:
+        payload["inputDelayTicks"] = input_delay_ticks
     return encode(MsgType.MATCH_START, payload)
 
 

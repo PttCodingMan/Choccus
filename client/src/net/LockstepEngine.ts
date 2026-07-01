@@ -155,6 +155,9 @@ export class LockstepEngine {
   private currentTick: number;
   /** Target tick of the next local InputFrame to schedule/send. */
   private nextSendTick: number;
+  /** This match's lockstep buffer (MatchStart.inputDelayTicks, or the shared
+   *  default for solo/loopback and older relays — see shared/constants.ts). */
+  private readonly inputDelayTicks: number;
   private prevState: SimState;
   private curState: SimState;
 
@@ -201,7 +204,8 @@ export class LockstepEngine {
     });
     this.prevState = this.curState;
     this.currentTick = opts.start.t0;
-    this.nextSendTick = opts.start.t0 + INPUT_DELAY_TICKS;
+    this.inputDelayTicks = opts.start.inputDelayTicks ?? INPUT_DELAY_TICKS;
+    this.nextSendTick = opts.start.t0 + this.inputDelayTicks;
 
     // Build a bot brain per bot slot from its chosen tier. The tier → BT rung
     // (version, archetype) mapping is identical on every client for the rolled
@@ -224,9 +228,9 @@ export class LockstepEngine {
       }
     }
 
-    // Lockstep warmup: the first INPUT_DELAY_TICKS ticks run on NO_INPUT for
-    // every slot (the relay only ever relays ticks >= t0 + INPUT_DELAY_TICKS).
-    for (let t = opts.start.t0; t < opts.start.t0 + INPUT_DELAY_TICKS; t++) {
+    // Lockstep warmup: the first inputDelayTicks ticks run on NO_INPUT for
+    // every slot (the relay only ever relays ticks >= t0 + inputDelayTicks).
+    for (let t = opts.start.t0; t < opts.start.t0 + this.inputDelayTicks; t++) {
       const bySlot = new Map<number, SlotInput>();
       for (let slot = 0; slot < this.numPlayers; slot++) {
         bySlot.set(slot, { dirs: NO_INPUT.dir, actions: NO_INPUT.action });
@@ -307,10 +311,10 @@ export class LockstepEngine {
   private tryAdvanceTick(): boolean {
     const t = this.currentTick;
 
-    // Schedule + send the local input for t + INPUT_DELAY_TICKS exactly once
-    // per produced tick (matches the relay's expected cadence: first frame at
-    // t0 + INPUT_DELAY_TICKS, one per tick after that).
-    if (t + INPUT_DELAY_TICKS === this.nextSendTick) {
+    // Schedule + send the local input for t + inputDelayTicks exactly once per
+    // produced tick (matches the relay's expected cadence: first frame at
+    // t0 + inputDelayTicks, one per tick after that).
+    if (t + this.inputDelayTicks === this.nextSendTick) {
       const frame = this.sampleLocalInput(this.nextSendTick);
       let bySlot = this.pendingInputs.get(this.nextSendTick);
       if (bySlot === undefined) {
@@ -325,7 +329,7 @@ export class LockstepEngine {
     // Fill bot slots locally from the current (byte-identical) state. Each bot
     // is sampled exactly once per tick (guarded by has()), so its internal RNG
     // advances identically on every client → no desync. Warmup ticks already
-    // hold NO_INPUT for bot slots, so bots first act at t0 + INPUT_DELAY_TICKS.
+    // hold NO_INPUT for bot slots, so bots first act at t0 + inputDelayTicks.
     if (this.bots.size > 0) {
       let bots = this.pendingInputs.get(t);
       if (bots === undefined) {

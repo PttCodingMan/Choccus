@@ -299,6 +299,36 @@ def test_match_start_ffa_classic_omits_map_and_teams():
         assert "teams" not in payload
 
 
+# -- per-room ping-measured input delay (RelayServer._start_match picks this;
+#    start_match() itself just has to thread whatever it's given through) ----
+
+
+def test_start_match_default_delay_matches_shared_constant():
+    from relay.constants import INPUT_DELAY_TICKS
+
+    capture, sent = _capture_match_start()
+    room = Lobby().create_room()
+    room.add_player("alice", capture)
+    room.add_player("bob", capture)
+    room.set_ready(0, True)
+    room.set_ready(1, True)
+    room.start_match()  # no arg → the shared floor, same as before this feature
+    assert sent[0]["inputDelayTicks"] == INPUT_DELAY_TICKS
+
+
+def test_start_match_custom_delay_reaches_match_start_and_coordinator():
+    capture, sent = _capture_match_start()
+    room = Lobby().create_room()
+    room.add_player("alice", capture)
+    room.add_player("bob", capture)
+    room.set_ready(0, True)
+    room.set_ready(1, True)
+    room.start_match(input_delay_ticks=7)
+    assert sent[0]["inputDelayTicks"] == 7
+    assert sent[1]["inputDelayTicks"] == 7
+    assert room.coordinator.next_tick == 7  # TickCoordinator.first_tick
+
+
 def test_match_start_teams_span_all_slots():
     # A 2v2 of 4 players → full-length per-slot array even when only some slots
     # were regrouped (here only slot 1 moved; the rest keep their defaults).

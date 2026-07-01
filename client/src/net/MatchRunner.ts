@@ -19,8 +19,10 @@
  *   from the supplied `rebuild` factory. R also forces an immediate restart.
  * - record: 'aiLoss' persists a solo replay to localStorage when the human wins
  *   (existing LossRecorder behavior); 'humanLoss' captures the dense replay every
- *   tick and, on OVER if the local player lost, fires onReplayReady with a
- *   self-contained ReplayUpload object (Phase 2b uploads it — not done here).
+ *   tick and, on OVER, fires onReplayReady if the local player lost OR (when
+ *   `isHost`) a bot in the match lost — the latter tags `botLoss` so the relay
+ *   can bucket it for AI diagnostics. `isHost` gates the bot-loss upload so
+ *   multiple humans in one room don't each upload the same match.
  * - onOver fires exactly once when the sim reaches OVER (the engine keeps
  *   rendering the frozen end state until stop() / restart).
  * - onStatus fires every frame with the engine's LockstepStatus.
@@ -105,8 +107,17 @@ export interface MatchRunnerOptions {
    * player lost; 'none' = off. Default 'none'.
    */
   record?: 'aiLoss' | 'humanLoss' | 'none';
-  /** Fired with the self-contained replay when record='humanLoss' and we lost. */
+  /** Fired with the self-contained replay when record='humanLoss' and either we
+   *  lost, or (isHost) a bot in the match lost. */
   onReplayReady?: (replay: MatchReplay) => void;
+  /**
+   * True if we are this room's designated reporter (net: the lowest-slot
+   * human). Only gates the bot-loss upload path — our-own-loss uploads are
+   * unaffected — so a multi-human room doesn't upload the same match once per
+   * human. Default false (solo/spectate have no "other humans" concern, but
+   * also no bots worth mining, so it's simply unused there).
+   */
+  isHost?: boolean;
   /** Show the mute toggle button (top-right). Default true. */
   showMuteButton?: boolean;
   /** Speed multiplier for the wall-clock dt fed to the engine (spectate). */
@@ -360,9 +371,12 @@ export class MatchRunner {
       // Solo: persist + log a replay when the human (AI's opponent) won.
       const summary = this.recorder.finishIfAiLost(final);
       if (summary !== null) console.log(summary);
-    } else if (record === 'humanLoss' && result === 'loss') {
-      // Net: hand a self-contained replay up for upload (Phase 2b).
-      this.opts.onReplayReady?.(this.buildReplay(final, result, winnerTeam));
+    } else if (record === 'humanLoss') {
+      const botLoss = this.losingBots(winnerTeam);
+      if (result === 'loss' || ((this.opts.isHost ?? false) && botLoss.length > 0)) {
+        // Net: hand a self-contained replay up for upload.
+        this.opts.onReplayReady?.(this.buildReplay(final, result, winnerTeam, botLoss));
+      }
     }
 
     this.opts.onOver?.(result, final, winnerTeam);
@@ -375,11 +389,27 @@ export class MatchRunner {
     }
   }
 
+  /** Bots in this match whose team did not win (empty if there's no winner or
+   *  no bots). Slot → team resolves the same way buildReplay's `teams` does. */
+  private losingBots(
+    winnerTeam: number | null,
+  ): Array<{ slot: number; difficulty: string }> {
+    if (winnerTeam === null) return [];
+    const { start, numPlayers } = this.spec;
+    const teams =
+      start.teams?.slice() ?? Array.from({ length: numPlayers }, (_, i) => i);
+    return (this.spec.bots ?? [])
+      .filter((b) => b.difficulty !== undefined)
+      .filter((b) => (teams[b.slot] ?? b.slot) !== winnerTeam)
+      .map((b) => ({ slot: b.slot, difficulty: b.difficulty as string }));
+  }
+
   /** Assemble the dense, self-contained replay for upload. */
   private buildReplay(
     final: SimState,
     result: 'win' | 'loss' | 'draw',
     winnerTeam: number | null,
+    botLoss: Array<{ slot: number; difficulty: string }>,
   ): MatchReplay {
     const { start, numPlayers } = this.spec;
     const config: FeelParams = start.config;
@@ -395,6 +425,7 @@ export class MatchRunner {
       inputs: this.replayTicks,
       result,
       winnerTeam,
+      ...(botLoss.length > 0 ? { botLoss } : {}),
     };
   }
 

@@ -12,10 +12,10 @@ the room is unit-testable without sockets.
 """
 
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from .constants import DEFAULT_FEEL_PARAMS, MAX_PLAYERS, GamePhase
+from .constants import DEFAULT_FEEL_PARAMS, INPUT_DELAY_TICKS, MAX_PLAYERS, GamePhase
 from .protocol import (
     DEFAULT_MAP,
     MAP_KINDS,
@@ -43,6 +43,10 @@ class Player:
     connected: bool = True
     #: Persistent rating key (localStorage id from the client; '' if anonymous).
     player_id: str = ""
+    #: Async RTT probe (websocket ping → seconds), or None (bots / tests that
+    #: don't care). RelayServer calls this at match-start to pick the room's
+    #: input delay; Room itself never calls it (stays unit-testable, no asyncio).
+    ping: Callable[[], Awaitable[float]] | None = None
 
 
 #: Display name for bot-filled slots (the actual archetype is resolved
@@ -90,13 +94,17 @@ class Room:
         return 0 <= slot < MAX_PLAYERS and slot not in self.players and slot not in self.bots
 
     def add_player(
-        self, name: str, send: Callable[[bytes], None], player_id: str = ""
+        self,
+        name: str,
+        send: Callable[[bytes], None],
+        player_id: str = "",
+        ping: Callable[[], Awaitable[float]] | None = None,
     ) -> int | None:
         """Assign the lowest free slot; None if the room is full or in-game."""
         if self.phase != GamePhase.LOBBY or len(self.players) + len(self.bots) >= MAX_PLAYERS:
             return None
         slot = next(s for s in range(MAX_PLAYERS) if self._free_slot(s))
-        self.players[slot] = Player(name=name, send=send, player_id=player_id)
+        self.players[slot] = Player(name=name, send=send, player_id=player_id, ping=ping)
         self.teams[slot] = slot  # default team = own slot (FFA)
         return slot
 
@@ -191,8 +199,12 @@ class Room:
 
     # -- match lifecycle --------------------------------------------------------
 
-    def start_match(self) -> None:
-        """LOBBY -> PLAYING: pick the shared seed, send per-player MatchStart."""
+    def start_match(self, input_delay_ticks: int = INPUT_DELAY_TICKS) -> None:
+        """LOBBY -> PLAYING: pick the shared seed, send per-player MatchStart.
+
+        `input_delay_ticks` is the room's lockstep input-scheduling buffer —
+        RelayServer measures it (ping-based, per room) before calling this;
+        defaults to the fixed floor for callers that don't care (tests)."""
         if self.phase != GamePhase.LOBBY or not self.players:
             return
         self.phase = GamePhase.PLAYING
@@ -207,6 +219,7 @@ class Room:
             slots=list(self.players.keys()) + list(self.bots.keys()),
             broadcast=self.broadcast,
             bots=self.bots.keys(),
+            first_tick=input_delay_ticks,
         )
         config = dict(DEFAULT_FEEL_PARAMS)  # frozen for the whole match
         # Map + teams come from the room. The relay is the SINGLE authority for
@@ -221,7 +234,15 @@ class Room:
         teams_arg = teams_arr if teams_arr != list(range(num_players)) else None
         for slot, player in self.players.items():
             player.send(
-                match_start(self.seed, slot, config, MATCH_T0, map_arg, teams_arg)
+                match_start(
+                    self.seed,
+                    slot,
+                    config,
+                    MATCH_T0,
+                    map_arg,
+                    teams_arg,
+                    input_delay_ticks,
+                )
             )
 
     def apply_result(self, slot: int, winner_team: int | None) -> bool:
