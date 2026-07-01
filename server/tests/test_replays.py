@@ -101,3 +101,35 @@ def test_missing_map_defaults_to_classic(tmp_path):
     assert path is not None
     with open(path, encoding="utf-8") as fh:
         assert json.load(fh)["map"] == "classic"
+
+
+def test_bot_loss_tag_stored(tmp_path):
+    payload = _valid_payload()
+    payload["botLoss"] = [{"slot": 1, "difficulty": "hard"}]
+    path = store_replay(payload, replay_dir=str(tmp_path))
+    assert path is not None
+    with open(path, encoding="utf-8") as fh:
+        assert json.load(fh)["botLoss"] == [{"slot": 1, "difficulty": "hard"}]
+
+
+def test_bot_loss_absent_when_omitted(tmp_path):
+    path = store_replay(_valid_payload(), replay_dir=str(tmp_path))
+    assert path is not None
+    with open(path, encoding="utf-8") as fh:
+        assert "botLoss" not in json.load(fh)
+
+
+def test_bot_loss_malformed_entries_dropped_not_rejected(tmp_path):
+    # A bogus botLoss entry doesn't sink the whole (otherwise valid) replay.
+    payload = _valid_payload()
+    payload["botLoss"] = [
+        {"slot": 1, "difficulty": "hard"},
+        {"slot": 99, "difficulty": "hard"},  # out of range
+        {"slot": 0, "difficulty": ""},  # empty
+        {"slot": 0},  # missing difficulty
+        "nope",  # not even a dict
+    ]
+    path = store_replay(payload, replay_dir=str(tmp_path))
+    assert path is not None
+    with open(path, encoding="utf-8") as fh:
+        assert json.load(fh)["botLoss"] == [{"slot": 1, "difficulty": "hard"}]

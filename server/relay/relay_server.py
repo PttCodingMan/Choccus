@@ -12,16 +12,22 @@ and silently ignored — the client simply receives no RoomState.
 """
 
 import asyncio
+import math
 import os
 
 from .auth import verify_session
 from .constants import (
     GamePhase,
+    INPUT_DELAY_TICKS,
     MAX_AUTH_TOKEN_LEN,
+    MAX_INPUT_DELAY_TICKS,
     MAX_NAME_LEN,
     MAX_PLAYER_ID_LEN,
     MAX_ROOM_ID_LEN,
     MAX_ROOM_SETTING_LEN,
+    PING_MARGIN_TICKS,
+    PING_TIMEOUT_S,
+    TICK_MS,
 )
 from .lobby import Lobby
 from .protocol import MsgType, decode, leaderboard
@@ -46,6 +52,11 @@ class Connection:
     def send(self, data: bytes) -> None:
         """Sync enqueue — safe to call from rooms/coordinator."""
         self._queue.put_nowait(data)
+
+    async def ping(self) -> float:
+        """RTT to this socket in seconds (websockets' built-in ping/pong)."""
+        pong_received = await self.ws.ping()
+        return await pong_received
 
     async def _drain(self) -> None:
         try:
@@ -143,7 +154,7 @@ class RelayServer:
             if room_id == ""
             else self.lobby.get_or_create(room_id)
         )
-        slot = room.add_player(name, conn.send, player_id)
+        slot = room.add_player(name, conn.send, player_id, conn.ping)
         if slot is None:  # only possible for an existing room (full / playing)
             _log(f"join ignored: room {room.room_id} full or already playing")
             return
@@ -181,7 +192,33 @@ class RelayServer:
                 f"room {room.room_id}: {len(room.players)} players all ready"
                 " — starting match"
             )
-            room.start_match()
+            asyncio.create_task(self._start_match(room))
+
+    async def _start_match(self, room) -> None:
+        """Measure each connected human's RTT, then start with a per-room
+        input delay sized to the slowest one (see constants.PING_MARGIN_TICKS
+        / MAX_INPUT_DELAY_TICKS). Runs as a background task so a slow/dead
+        ping probe can't block the rest of the event loop; room.start_match()
+        re-checks phase==LOBBY so a race (room reset mid-probe) is a no-op."""
+        rtts = await asyncio.gather(
+            *(self._probe_rtt(p) for p in room.players.values() if p.connected)
+        )
+        valid = [r for r in rtts if r is not None]
+        if valid:
+            ticks = math.ceil(max(valid) * 1000 / TICK_MS) + PING_MARGIN_TICKS
+            delay = max(INPUT_DELAY_TICKS, min(MAX_INPUT_DELAY_TICKS, ticks))
+        else:
+            delay = INPUT_DELAY_TICKS
+        room.start_match(input_delay_ticks=delay)
+
+    @staticmethod
+    async def _probe_rtt(player) -> float | None:
+        if player.ping is None:
+            return None
+        try:
+            return await asyncio.wait_for(player.ping(), PING_TIMEOUT_S)
+        except Exception:
+            return None  # dead/slow probe — _start_match falls back to the floor
 
     def _add_bot(self, conn: Connection, payload: dict) -> None:
         room = conn.room

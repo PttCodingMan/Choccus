@@ -165,6 +165,7 @@ export function buildReplayUpload(replay: Omit<ReplayUploadMsg, 'type'>): Uint8A
     inputs: replay.inputs,
     result: replay.result,
     winnerTeam: replay.winnerTeam,
+    ...(replay.botLoss !== undefined ? { botLoss: replay.botLoss } : {}),
   });
 }
 
@@ -211,6 +212,7 @@ export function decodeServerMsg(data: Uint8Array): ServerMsg {
       // undefined value never leaks onto the wire-decoded message.
       const map = p['map'];
       const teams = p['teams'];
+      const inputDelayTicks = p['inputDelayTicks'];
       return {
         type: MsgType.MATCH_START,
         seed: p['seed'] as number,
@@ -219,6 +221,7 @@ export function decodeServerMsg(data: Uint8Array): ServerMsg {
         t0: p['t0'] as number,
         ...(typeof map === 'string' ? { map: map as MapKind } : {}),
         ...(Array.isArray(teams) ? { teams: teams as number[] } : {}),
+        ...(typeof inputDelayTicks === 'number' ? { inputDelayTicks } : {}),
       } satisfies MatchStartMsg;
     }
     case MsgType.INPUT_BROADCAST:

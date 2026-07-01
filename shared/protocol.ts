@@ -207,6 +207,12 @@ export interface ReplayUploadMsg {
   result: 'win' | 'loss' | 'draw';
   /** Absolute winning team (= winning slot in FFA), or null for a draw. */
   winnerTeam: number | null;
+  /**
+   * Bots present in this match whose team did NOT win (i.e. the bot lost to a
+   * human) — real counter-examples for the AI diagnostics tooling (v5-diag /
+   * npm run replay), distinct from self-play bench data. Omitted when empty.
+   */
+  botLoss?: Array<{ slot: number; difficulty: string }>;
 }
 
 /**
@@ -292,6 +298,14 @@ export interface MatchStartMsg {
    * byte-identical (omitted → engine defaults team = slot, == the default array).
    */
   teams?: number[];
+  /**
+   * Ticks a local input is scheduled ahead of the tick it applies to (the
+   * lockstep round-trip buffer). The relay measures each connected human's
+   * RTT to itself right before start and picks the max (clamped, +margin) so
+   * one room's ping doesn't force a fixed buffer on every room. Falls back to
+   * shared/constants.ts INPUT_DELAY_TICKS when absent (older relay / loopback).
+   */
+  inputDelayTicks?: number;
 }
 
 /** All slots' inputs for sim tick t; clients only step once a tick is complete. */

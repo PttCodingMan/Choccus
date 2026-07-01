@@ -126,7 +126,26 @@ def _validate_upload(payload: dict[str, Any]) -> dict[str, Any] | None:
     map_ = payload.get("map")
     map_clean = map_ if isinstance(map_, str) and map_ else "classic"
 
-    return {
+    # botLoss: optional tag for bots in this match that did not win — real
+    # counter-examples for the AI diagnostics tooling (v5-diag / npm run
+    # replay), distinct from self-play bench data. Malformed entries are
+    # dropped individually rather than rejecting the whole (otherwise valid)
+    # replay — this field is a bonus tag, not load-bearing for replay().
+    bot_loss_clean: list[dict[str, Any]] = []
+    bot_loss = payload.get("botLoss")
+    if isinstance(bot_loss, list):
+        for entry in bot_loss:
+            if not isinstance(entry, dict):
+                continue
+            slot = _as_int(entry.get("slot"))
+            difficulty = entry.get("difficulty")
+            if slot is None or slot < 0 or slot >= MAX_PLAYERS:
+                continue
+            if not isinstance(difficulty, str) or not difficulty:
+                continue
+            bot_loss_clean.append({"slot": slot, "difficulty": difficulty[:16]})
+
+    doc: dict[str, Any] = {
         "schema": REPLAY_SCHEMA,
         "seed": seed,
         "map": map_clean,
@@ -138,6 +157,9 @@ def _validate_upload(payload: dict[str, Any]) -> dict[str, Any] | None:
         "result": result_clean,
         "winnerTeam": winner_clean,
     }
+    if bot_loss_clean:
+        doc["botLoss"] = bot_loss_clean
+    return doc
 
 
 def _safe_name(parts: str) -> str:

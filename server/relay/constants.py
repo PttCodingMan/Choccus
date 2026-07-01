@@ -12,7 +12,28 @@ from enum import IntEnum
 #: Local input at tick T is scheduled for sim tick T + INPUT_DELAY_TICKS.
 #: The relay therefore expects the first InputFrame for tick t0 + this value;
 #: ticks t0 .. t0 + INPUT_DELAY_TICKS - 1 use implicit neutral input client-side.
+#: This is also the FLOOR of the per-room ping-measured delay below (a room
+#: with near-zero measured RTT still gets this much buffer) and the fallback
+#: used when a room's ping can't be measured (solo/loopback always uses this
+#: fixed value — they never negotiate a delay).
 INPUT_DELAY_TICKS = 2
+
+#: Mirror of shared/constants.ts TICK_MS (60 Hz fixed timestep) — needed here
+#: to convert a measured RTT (seconds) into a tick count.
+TICK_MS = 1000 / 60
+
+#: Ceiling on the per-room ping-measured delay: past this, more buffer would
+#: make every input feel laggy for everyone in the room, so a very slow peer
+#: just stalls sometimes instead of taxing the whole room's input feel.
+MAX_INPUT_DELAY_TICKS = 12
+
+#: Extra tick(s) of slack added above a room's measured max RTT (a single ping
+#: sample is noisy — jitter, processing time — so round up generously).
+PING_MARGIN_TICKS = 1
+
+#: Timeout for one RTT probe at match start. A slow/dead probe just falls back
+#: to INPUT_DELAY_TICKS for that room rather than blocking the start.
+PING_TIMEOUT_S = 1.5
 
 #: Missing-input stall tolerance before the server broadcasts StallNotice.
 STALL_TIMEOUT_MS = 200
@@ -21,11 +42,13 @@ STALL_TIMEOUT_MS = 200
 HASH_REPORT_INTERVAL = 30
 
 #: Max ticks a client may legitimately run ahead of the relay's next_tick.
-#: Clients only ever send for currentTick + INPUT_DELAY_TICKS, so this is a
-#: tight bound comfortably above any real lead — it caps how far forward the
-#: coordinator buffers inputs/hashes so a flooding client can't grow those
+#: Clients only ever send for currentTick + <that room's negotiated delay>, so
+#: this is a tight bound comfortably above any real lead (using the CEILING of
+#: the per-room delay, not the floor, so a high-ping room's legitimate input
+#: never gets dropped as "too far in the future") — it caps how far forward
+#: the coordinator buffers inputs/hashes so a flooding client can't grow those
 #: dicts without bound (remote OOM). Out-of-window ticks are silently dropped.
-MAX_TICK_LEAD = INPUT_DELAY_TICKS + HASH_REPORT_INTERVAL * 2
+MAX_TICK_LEAD = MAX_INPUT_DELAY_TICKS + HASH_REPORT_INTERVAL * 2
 
 #: Recent InputBroadcasts buffered per match for reconnect catch-up (M5).
 INPUT_HISTORY_SIZE = 64

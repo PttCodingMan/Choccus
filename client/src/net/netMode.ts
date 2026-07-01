@@ -251,12 +251,12 @@ export async function runNetMode(params: URLSearchParams): Promise<void> {
       bots,
       renderer,
       keyboard,
-      // Capture the match; on OVER if WE lost, hand the replay up for upload
-      // (the relay-side storage is Phase 2b — uploadReplay() is wired, dormant).
+      // Capture the match; on OVER, hand the replay up for upload if WE lost, or
+      // (host only, to avoid every human in the room re-uploading the same match)
+      // a bot lost — see relay/replays.py for the relay-side storage.
       record: 'humanLoss',
+      isHost: lobby.roomState !== null && isLocalHost(lobby.roomState),
       onReplayReady: (replay) => {
-        // On a net loss, upload the self-contained replay so the relay can store
-        // it for offline analysis (Phase 2b storage is live; see relay/replays.py).
         client.uploadReplay(replay);
       },
       onStatus: (s) => updateMatchStatus(s),

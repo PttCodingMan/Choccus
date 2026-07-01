@@ -84,6 +84,9 @@ def test_two_clients_join_ready_matchstart_and_tick_relay():
             }
             assert start_a["t0"] == start_b["t0"] == 0
             assert {start_a["slot"], start_b["slot"]} == {0, 1}
+            # Both real sockets are loopback (~0 RTT) → the ping-measured delay
+            # clamps to the floor, same as the fixed constant before this feature.
+            assert start_a["inputDelayTicks"] == start_b["inputDelayTicks"] == 2
 
             # Relay one full tick (first expected tick = t0 + INPUT_DELAY_TICKS).
             await a.send(protocol.input_frame(2, dirs=1, actions=0))

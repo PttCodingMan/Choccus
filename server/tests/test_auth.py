@@ -157,8 +157,15 @@ def test_relay_join_trusts_signed_session():
     class FakeWS:
         remote_address = ("127.0.0.1", 0)
 
+    fake_fields = {
+        "room": None,
+        "slot": None,
+        "send": lambda self, d: None,
+        "ping": lambda self: None,  # not awaited by _join itself
+    }
+
     # Logged-in join: playerId carries a signed token -> embedded pid wins.
-    conn = type("C", (), {"room": None, "slot": None, "send": lambda self, d: None})()
+    conn = type("C", (), fake_fields)()
     token = auth.make_session("discord:42", "Choco")
     server._join(conn, {"roomId": "r1", "name": "", "playerId": token})
     assert conn.room.players[conn.slot].player_id == "discord:42"
@@ -166,6 +173,6 @@ def test_relay_join_trusts_signed_session():
     assert conn.room.players[conn.slot].name == "Choco"
 
     # Anonymous join: a bare id is used as-is (still spoofable, unchanged).
-    conn2 = type("C", (), {"room": None, "slot": None, "send": lambda self, d: None})()
+    conn2 = type("C", (), fake_fields)()
     server._join(conn2, {"roomId": "r2", "name": "Guest", "playerId": "anon-uuid-xyz"})
     assert conn2.room.players[conn2.slot].player_id == "anon-uuid-xyz"
