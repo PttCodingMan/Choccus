@@ -1307,9 +1307,13 @@ export class BotController {
         const nIdx = idx(nx, ny);
         if (visited.has(nIdx)) continue;
         if (!base(nx, ny)) continue;
-        // Don't flood through a tile that ignites within the near horizon: it
-        // would be on fire before we could pass it.
-        const nEarliest = danger.earliestLethal(nIdx);
+        // Don't flood through a tile with a SUSTAINED ignition within the near
+        // horizon: it would be on fire before we could pass it. A momentary
+        // (≤1-tick) flash — e.g. a brick clearing underfoot — does NOT block
+        // traversal (see earliestSustainedLethal): the lenient hitbox means a
+        // body merely passing through rarely accumulates enough coverage in a
+        // single tick, so it must not sever an otherwise-real escape route.
+        const nEarliest = danger.earliestSustainedLethal(nIdx);
         if (nEarliest !== undefined && nEarliest <= STEP_DANGER_HORIZON) continue;
         visited.add(nIdx);
         queue.push(nIdx);
@@ -1457,7 +1461,10 @@ export class BotController {
       const ny = ry + dirDY(d);
       if (!inBounds(nx, ny) || !base(nx, ny)) continue;
       const nIdx = idx(nx, ny);
-      const ne = danger.earliestLethal(nIdx);
+      // A momentary (≤1-tick) flash doesn't block stepping here (see
+      // earliestSustainedLethal): the lenient hitbox means it rarely traps a
+      // body merely passing through.
+      const ne = danger.earliestSustainedLethal(nIdx);
       if (ne !== undefined && ne <= STEP_DANGER_HORIZON) continue; // can't step here.
       // Flood from this neighbour, never re-entering the self tile, until a truly-
       // safe tile is reached or the budget runs out.
@@ -1483,7 +1490,7 @@ export class BotController {
           if (!inBounds(mx, my) || !base(mx, my)) continue;
           const mi = idx(mx, my);
           if (seen.has(mi)) continue;
-          const me = danger.earliestLethal(mi);
+          const me = danger.earliestSustainedLethal(mi);
           if (me !== undefined && me <= STEP_DANGER_HORIZON) continue;
           seen.add(mi);
           queue.push(mi);
@@ -1672,7 +1679,11 @@ export class BotController {
         if (!inBounds(nx, ny) || !base(nx, ny)) continue;
         const ni = idx(nx, ny);
         if (seen.has(ni)) continue;
-        const ne = danger.earliestLethal(ni);
+        // A momentary (≤1-tick) flash doesn't block crossing (see
+        // earliestSustainedLethal) — kept symmetric with survivability()/
+        // escapeBranches() so the bot judges the foe's real escape routes by
+        // the same rule it judges its own.
+        const ne = danger.earliestSustainedLethal(ni);
         if (ne !== undefined && ne <= STEP_DANGER_HORIZON) continue; // can't cross fire.
         seen.add(ni);
         queue.push(ni);

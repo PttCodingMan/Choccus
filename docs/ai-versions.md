@@ -828,3 +828,23 @@ village/pirate **0**。
 
 ### 驗證
 lint／tsc／`test:ci`(240) ✅；自陷護欄 10/10（zoner+centralW30 自陷率 1.87%，安全閘不增送頭）✅。
+
+## 十七、放彈邏輯三個新 lever（fork／mobility／bomb-denial Voronoi）— 全 DROP（2026-07-01）
+
+> 一句話：**在 §十四 的 9 個 lever 之後，又試了「放彈邏輯」清單的 3 個新點子（idea 1/3/4），
+> 全部 DROP——跟 §十四 同一個失敗形狀：對被動 farmer 有效的招式，遇到會鏡像反制的對手就打回原形，
+> 或者根本被既有 gate 架空成打不到決策的死代碼。程式碼已 revert，只留本節記錄。**
+
+| lever | 機制 | 試過的 weight | 結果 | 判定 |
+| --- | --- | --- | --- | --- |
+| **FORK**（idea 3） | 放彈一次砍斷敵人 ≥2 條 `escapeBranches`（西洋棋式的叉），與 `sealValue` 的純面積 shrink 分開算 | classic 5、30 | `escapeBranches before>=2` 的 gate 確實會觸發，但真正「一次砍 ≥2 條」在 classic 走廊地形上約 10–20 次觸發才 1 次；weight 5 與 30 兩組 80-rep paired 結果幾乎相同（farmer −1.3%、其餘 0.0%，z~−1）——太罕見，動不了勝率 | DROP |
+| **MOBILITY**（idea 4） | 農田彈若炸開的磚「遠側已是空地」（打通捷徑/交會點）比只往死巷再挖一步多加分 | classic 10、50 | debug counter 確認機制真的有觸發（約 17% 被炸磚符合遠側已空，與 72% 軟磚密度一致），但 `v5-screen` 在兩組 weight 上完全打平（0.0% Δ，z=0.0，320 局）。根因：`growthValue` 的「補缺口」gate 早就讓任何有農田收益的放彈選項贏過所有移動候選——這個加分項只能改變「放彈已經勝出」之後的邊際分數，永遠翻不了 bomb-vs-move 的決策，因為 root 永遠只有一顆能炸的磚 | DROP（結構性打不到決策） |
+| **BOMB-DENIAL VORONOI**（idea 1） | 放彈當下把自己的爆風當「牆」，重算一次全域領域差（`voronoiDiff`），只加在 PLACE_BOMB 這個候選上——`sealValue` 只認 fire+2 內的可攻擊敵人，這個是不挑對手、全域的版本 | classic 3 | 單獨對 `v7:farmer` 的 `v5-screen` 看起來很亮眼（+11.9%，80-rep paired），但真正上 `bt-rank` 對整個凍結池一測，classic BT **1710→1690（−20）**——trapper 60%→50% 把 farmer 那邊賺的全吃光。跟 §十四的 9 個 lever 完全同一個形狀：對被動對手有效、對會反制的主動對手倒賠 | DROP |
+
+### 為什麼還是撞牆——同一條 §十四 的線
+三個 lever 沒有一個是「不管對手怎麼下都有淨利」的**純結構性佔領**（Voronoi/centrality 那條線）。FORK／BOMB-DENIAL 都是「認出一個能攻擊/壓縮敵人的局面才觸發」的**反應式**訊號——鏡像對局裡雙方觸發條件對稱，谁先手誰就先冒進，被鏡像等量反打；MOBILITY 甚至連反應式都算不上，是被更早的既有 gate（`growthValue`）架空成摸不到決策的死代碼。**§十四的結論在追加 3 個實驗後依然成立**：`v8:zoner` 現引擎的純調參天花板未被打破，能穿透的只有不看對手行為的全域領域訊號（已用在 §十五/十六）。
+
+### 給未來的提醒
+- 程式碼已 `git checkout` revert 回 HEAD，`BotController.ts`/`MapProfile.ts`/`classic`/`pirate` 4 個檔案不留死分支。
+- **別再跑** fork／mobility／bomb-denial Voronoi——本節已證實全否決，跟 §十四清單合併成 12 個已否決 lever。
+- 若要再試近身/主動系的新機制，**先問「這個訊號在鏡像對局裡會不會對稱抵銷」**，答案是會的話大概率重踩這個地雷；純域控/資源類（不依賴對手行為）才是目前唯一穿透過的形狀。
