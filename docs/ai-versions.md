@@ -828,3 +828,94 @@ village/pirate **0**。
 
 ### 驗證
 lint／tsc／`test:ci`(240) ✅；自陷護欄 10/10（zoner+centralW30 自陷率 1.87%，安全閘不增送頭）✅。
+
+## 十七、放彈邏輯三個新 lever（fork／mobility／bomb-denial Voronoi）— 全 DROP（2026-07-01）
+
+> 一句話：**在 §十四 的 9 個 lever 之後，又試了「放彈邏輯」清單的 3 個新點子（idea 1/3/4），
+> 全部 DROP——跟 §十四 同一個失敗形狀：對被動 farmer 有效的招式，遇到會鏡像反制的對手就打回原形，
+> 或者根本被既有 gate 架空成打不到決策的死代碼。程式碼已 revert，只留本節記錄。**
+
+| lever | 機制 | 試過的 weight | 結果 | 判定 |
+| --- | --- | --- | --- | --- |
+| **FORK**（idea 3） | 放彈一次砍斷敵人 ≥2 條 `escapeBranches`（西洋棋式的叉），與 `sealValue` 的純面積 shrink 分開算 | classic 5、30 | `escapeBranches before>=2` 的 gate 確實會觸發，但真正「一次砍 ≥2 條」在 classic 走廊地形上約 10–20 次觸發才 1 次；weight 5 與 30 兩組 80-rep paired 結果幾乎相同（farmer −1.3%、其餘 0.0%，z~−1）——太罕見，動不了勝率 | DROP |
+| **MOBILITY**（idea 4） | 農田彈若炸開的磚「遠側已是空地」（打通捷徑/交會點）比只往死巷再挖一步多加分 | classic 10、50 | debug counter 確認機制真的有觸發（約 17% 被炸磚符合遠側已空，與 72% 軟磚密度一致），但 `v5-screen` 在兩組 weight 上完全打平（0.0% Δ，z=0.0，320 局）。根因：`growthValue` 的「補缺口」gate 早就讓任何有農田收益的放彈選項贏過所有移動候選——這個加分項只能改變「放彈已經勝出」之後的邊際分數，永遠翻不了 bomb-vs-move 的決策，因為 root 永遠只有一顆能炸的磚 | DROP（結構性打不到決策） |
+| **BOMB-DENIAL VORONOI**（idea 1） | 放彈當下把自己的爆風當「牆」，重算一次全域領域差（`voronoiDiff`），只加在 PLACE_BOMB 這個候選上——`sealValue` 只認 fire+2 內的可攻擊敵人，這個是不挑對手、全域的版本 | classic 3 | 單獨對 `v7:farmer` 的 `v5-screen` 看起來很亮眼（+11.9%，80-rep paired），但真正上 `bt-rank` 對整個凍結池一測，classic BT **1710→1690（−20）**——trapper 60%→50% 把 farmer 那邊賺的全吃光。跟 §十四的 9 個 lever 完全同一個形狀：對被動對手有效、對會反制的主動對手倒賠 | DROP |
+
+### 為什麼還是撞牆——同一條 §十四 的線
+三個 lever 沒有一個是「不管對手怎麼下都有淨利」的**純結構性佔領**（Voronoi/centrality 那條線）。FORK／BOMB-DENIAL 都是「認出一個能攻擊/壓縮敵人的局面才觸發」的**反應式**訊號——鏡像對局裡雙方觸發條件對稱，谁先手誰就先冒進，被鏡像等量反打；MOBILITY 甚至連反應式都算不上，是被更早的既有 gate（`growthValue`）架空成摸不到決策的死代碼。**§十四的結論在追加 3 個實驗後依然成立**：`v8:zoner` 現引擎的純調參天花板未被打破，能穿透的只有不看對手行為的全域領域訊號（已用在 §十五/十六）。
+
+### 給未來的提醒
+- 程式碼已 `git checkout` revert 回 HEAD，`BotController.ts`/`MapProfile.ts`/`classic`/`pirate` 4 個檔案不留死分支。
+- **別再跑** fork／mobility／bomb-denial Voronoi——本節已證實全否決，跟 §十四清單合併成 12 個已否決 lever。
+- 若要再試近身/主動系的新機制，**先問「這個訊號在鏡像對局裡會不會對稱抵銷」**，答案是會的話大概率重踩這個地雷；純域控/資源類（不依賴對手行為）才是目前唯一穿透過的形狀。
+
+## 十八、逐秒回放看「v8 怎麼擊殺」＋ huntStartTick 提早 sweep — DROP（2026-07-01）
+
+> 一句話：**用 `v5-diag` 反過來跑（`target=<對手> opponent=v8:zoner`）直接看 v8 的擊殺軌跡，發現兩種擊殺模式
+> （中局農田走廊順手封殺 vs 縮圈域控擠壓）；順著「能否把更多擊殺提早到中局」試了 `huntStartTick` 903/1050，
+> 兩點都 DROP——1200 現引擎（含 Voronoi）上仍是這條軸的帕累托最優，且瓶頸從 trapper 換成了 hunter。**
+
+### 診斷：v8 的擊殺分兩種模式（`v5-diag` 反接法，classic，無 `--boards` 用聚合、`--boards=2` 看逐秒地圖）
+把 `target`/`opponent` 對調（`target=<弱勢方> opponent=v8:zoner`），`v5-diag` 記錄的就是**受害者**的死亡軌跡
+＝ v8 的擊殺軌跡。25×2 局：
+
+| 對手 | v8 勝率 | LOSS CAUSES（TRAPPED/SEALED/OPEN）| DEATH PHASE（mid/shrink）|
+| --- | --- | --- | --- |
+| v7:trapper | 68% | 76% / 18% / 6% | 71% / 29% |
+| v7:farmer | 62% | 81% / 10% / 10% | 81% / 19% |
+| v7:runner | 72% | 53% / 28% / 19% | 50% / 50% |
+| v7:hunter | 92% | 15% / 57% / 28% | 15% / 85% |
+
+**兩種擊殺模式**：①**農田走廊順手封殺**（trapper/farmer 主導，中局）——`--boards=2` 的逐秒地圖證實：v8 farm 時已在走廊
+連續放了一排彈，對手剛好走進去，連鎖引爆瞬間把自由格從 24→0、逃生分支 2→0（約 1 秒內，不是慢慢逼近的獵殺）；
+②**縮圈域控擠壓**（hunter 主導，縮圈階段）——hunter 從不發育（devGap 死亡時 −5.6），逃生分支全程壓在 1.1–1.7
+（低於勝局均值 2.2+），縮圈硬化格本身就送頭，死亡當下敵人常在 12+ 格外、`enemyBombsNear` 僅 ~0.6（不是被炸死，
+是被域控壓死）。**兩種模式都已對應到現有機制**（①農田節奏 `multiBombFarm`/`farmCadence`、②已上線的 `voronoiDiff`
++`voronoiCentralW`），不是新漏洞。
+
+### 順著①試圖把更多擊殺提早到中局：sweep `huntStartTick`（classic，`paired v5-screen` 對 `v7:trapper,v7:farmer,v7:hunter,v8:zoner`）
+`huntStartTick` 控制「解除近戰保守閘、允許用擊殺換安全」的時鐘起點；既有值 1200 的文件註解只驗證過對 trapper
+（600 會崩），且是 Voronoi 上線前量的（§十四的 meta 發現：舊逐旋鈕數字已過期）——值得重量。
+
+| 值 | v7:trapper | v7:farmer | v7:hunter | 鏡像 | 判定 |
+| --- | --- | --- | --- | --- | --- |
+| 900 | +0~+2.8%（noisy）| +2.1% | **−6.3%（z−1.8）** | +0.0% | **DROP**（hunter 顯著變差）|
+| 1050 | +0.0% | +0.0% | −2.1%（z−1.0，未達顯著但持續存在）| +0.0% | INCONCLUSIVE（無正訊號，hunter 仍偏負）|
+| 1200（現值）| baseline | baseline | baseline | baseline | — |
+
+`v5-diag`（target=v8:zoner, opponent=v7:hunter, huntStartTick=900）顯示 v8 自己的死法：9 敗局中 8 個 TRAPPED、
+死亡時 **devGap 反而是 +4.2**（v8 發育領先）——不是打不過，是**提早鬆開安全閘讓 v8 更早接受近戰交換**，而 hunter
+從 tick 0 就全力攻擊、沒有「養成期」可利用，於是白送掉幾場本來會贏的近戰。900 對 trapper/farmer 確實有把擊殺
+比例往中局推（trapper mid 佔比 71%→79%），但代價是 hunter 顯著退步；1050 兩邊都沖淡成雜訊。**中間沒有兩全點**——
+1200 是現引擎上這條軸真正的帕累托最優，瓶頸從文件原記載的 trapper 換成了 hunter。
+
+### 結論
+- **`huntStartTick` 別再 sweep**：900/1050 皆已證實 DROP/INCONCLUSIVE，併入 §十四的已否決清單（現 13 個）。
+- 這條軸是**反應式**（提早鬆閘＝對所有對手一視同仁提早冒險，不分對手強弱）——符合 §十七結論「反應式訊號在鏡像/
+  主動對手身上打回原形」，hunter 就是那個主動對手。
+- 若還要把更多擊殺推到中局，**方向應該是延伸 §十五/十六已證實有效的非反應式全域訊號**（例如讓 `voronoiWeight`/
+  `voronoiCentralW` 在中局提早生效而非固定常數），而不是再調這條反應式的安全閘時鐘。本節只否決 `huntStartTick`，
+  未否決「中局擊殺」這個目標本身。
+- 程式碼已 revert（`classic/MapProfile.ts` 恢復 `huntStartTick: 1200`），無殘留改動。
+
+### 追加實驗：把 Voronoi 擠壓權重跟著時鐘 urgency 加碼（同日，也 DROP）
+順著上一條的建議試了：新增 `voronoiUrgencyRampPct`（0=中性、逐位元不變），讓 `curVoronoiWeight` 跟著既有的
+KILL-DOCTRINE `urgency`（0..100，`huntStartTick`→`T_HUNT_FULL` 線性爬升）加碼——**不碰安全閘／refuge gate**，
+只加重「同樣安全的格子裡比較偏好哪一格」的力道，理論上該比 `huntStartTick` 更安全（後者是真的放寬風險承受度）。
+只加在 classic（village 顯式釘 0 隔離），`v5-screen` 對 `v7:trapper,v7:farmer,v7:hunter,v8:zoner`：
+
+| `voronoiUrgencyRampPct` | 效果（urgency=100 時的權重）| trapper | farmer | hunter | 鏡像 | 判定 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 30 | 3（整數無條件捨去吃掉爬升，`floor(3×30×100/10000)=0`）| +0.0% | +0.0% | +0.0% | +0.0% | **精確 0.0%／z=0 是「機制沒觸發」的訊號**，非真的無效果 |
+| 50 | 4（+33%）| **−5.2%（z−1.7）** | +0.0% | +0.0% | +0.0% | DROP（trapper 顯著變差）|
+| 100 | 6（+100%）| −4.2% | −5.2% | **−6.3%（z−1.8）** | +0.0% | DROP（三個對手全面變差）|
+
+`v5-diag`（trapper, rampPct=50）：v8 勝率 68%→60%，但**中局擊殺數不變（24→24）、掉的是縮圈擊殺（10→6）**——
+即加碼域控權重沒有把縮圈擊殺「提早」變成中局擊殺，反而**破壞了縮圈階段本來會贏的那幾場**。推測：`voronoiWeight`
+現在的固定小值（3）是跟 `voronoiCentralW=30`／`shrinkCenterPriorityWeight=20` 一起調好的平衡點，中局就把權重
+推高會提早放大同一個中心性偏好，跟縮圈階段專門調過的版本互相打架，而不是單純疊加。
+
+**結論：`voronoiUrgencyRampPct` 也別再試**（併入否決清單，現 14 個）。程式碼已 revert（`MapProfile.ts` 介面／
+`classic`／`pirate`／`BotController.ts` 4 個檔案皆恢復 HEAD，無殘留）。「延伸非反應式訊號」這個方向本身也撞牆了：
+不是「反應式 vs 非反應式」單一準則就能保證安全，**任何改動現有已聯合調好的權重組合都可能破壞既有平衡**——目前
+看不到還沒撞過牆的「把中局擊殺再往上推」的槓桿；`v8:zoner` 現引擎在這個目標上大概率已經到頂。

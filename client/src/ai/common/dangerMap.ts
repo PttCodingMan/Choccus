@@ -73,6 +73,22 @@ export interface IntervalDanger {
   lethalBetween(tileIdx: number, start: number, end: number): boolean;
   /** Earliest tick this tile ever becomes lethal, or undefined if never. */
   earliestLethal(tileIdx: number): number | undefined;
+  /**
+   * Earliest tick this tile becomes lethal via a SUSTAINED interval (duration
+   * > 1 tick — a real flame cell), ignoring momentary 1-tick flashes. A 1-tick
+   * window only arises from a destructible-brick arm-stop cell (see
+   * processBomb below: `stamp(tile, t, t + 1)`) — the tile is solid right up to
+   * detonation, with no residual flame. Per the sim's lenient hitbox
+   * (Explosion.ts explosionCovers, HIT_COVER_NUM/DEN), a body merely
+   * TRANSITING such a tile (not dwelling on it) essentially never accumulates
+   * ≥HIT_COVER_NUM/DEN coverage in a single tick, unlike the AI's tile-binary
+   * `earliestLethal`, which treats it identically to a full 27-tick flame.
+   * Used ONLY to stop escape-route BFS floods from treating a one-tick flash
+   * as an impenetrable wall that severs otherwise-real safety beyond it — the
+   * flood still scores such a tile as worthless via `earliestLethal` (no false
+   * refuge credit), this only lets traversal continue past it.
+   */
+  earliestSustainedLethal(tileIdx: number): number | undefined;
 }
 
 /**
@@ -228,6 +244,16 @@ export function buildDangerMap(
       if (list === undefined) return undefined;
       let best: number | undefined;
       for (const iv of list) {
+        if (best === undefined || iv.start < best) best = iv.start;
+      }
+      return best;
+    },
+    earliestSustainedLethal(tileIdx: number): number | undefined {
+      const list = intervals[tileIdx];
+      if (list === undefined) return undefined;
+      let best: number | undefined;
+      for (const iv of list) {
+        if (iv.end - iv.start <= 1) continue; // momentary flash, not sustained.
         if (best === undefined || iv.start < best) best = iv.start;
       }
       return best;
